@@ -543,7 +543,7 @@ export default function App(){
               <input type="checkbox" checked={allowBackground} onChange={e=>setAllowBackground(e.target.checked)} />
             </div>
             {/* Collection (mobile seulement) */}
-            <div className="lg:hidden">
+            <div className="mt-2 lg:hidden">
               {/* >>> Copie EXACTE du bloc “Collection” lignes 561 à 584 <<< */}
               <div className="glass p-6">
                 <div className="flex items-center gap-2 mb-4">
