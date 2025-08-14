@@ -1,70 +1,144 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { RefreshCcw, Shuffle, Copy, Download, Upload, Settings2, Info, Sparkles, Trash2, Sun, Moon } from "lucide-react";
+import { Copy, Download, Sun, Moon } from "lucide-react";
+import React, { useEffect, useState } from "react";
 
-/**
- * MTG Commander Deck Generator — v6.6
- *
- * Changes from v6.5 (mobile-only UX earlier) + NEW:
- *  - Functional Dark / Light mode toggle with persistence (localStorage) and system default.
- *  - No desktop layout changes; the toggle is just an extra header action button.
- */
+export default function App() {
+  // Fonctions placeholders pour éviter les erreurs
+  const copyList = () => alert("Fonction copier non implémentée dans cette démo.");
+  const exportJson = () => alert("Fonction export JSON non implémentée dans cette démo.");
+  const exportTxt = () => alert("Fonction export TXT non implémentée dans cette démo.");
 
-/***************** Theme (Glass) with Dark/Light *****************/
+  // Thème (Dark/Light) avec persistance
+  const initialTheme = (() => {
+    try {
+      const saved = localStorage.getItem("theme");
+      if (saved === "dark" || saved === "light") return saved;
+      if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) return "dark";
+      return "light";
+    } catch {
+      return "dark";
+    }
+  })();
+  const [theme, setTheme] = useState(initialTheme);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    try {
+      localStorage.setItem("theme", theme);
+    } catch {}
+  }, [theme]);
+
+  useInjectCss(THEME_CSS);
+
+  return (
+    <div className="p-4">
+      <div className="header-actions flex flex-col lg:flex-row gap-2">
+        <button className="btn" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
+          {theme === "dark" ? (
+            <>
+              <Sun className="h-4 w-4" /> Mode clair
+            </>
+          ) : (
+            <>
+              <Moon className="h-4 w-4" /> Mode sombre
+            </>
+          )}
+        </button>
+        <button className="btn" onClick={copyList}>
+          <Copy className="inline-block h-4 w-4" /> Copier
+        </button>
+        <button className="btn" onClick={exportJson}>
+          <Download className="inline-block h-4 w-4" /> JSON
+        </button>
+        <button className="btn-primary" onClick={exportTxt}>
+          <Download className="inline-block h-4 w-4" /> TXT
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Hook pour injecter du CSS dans la page
+function useInjectCss(css) {
+  useEffect(() => {
+    const style = document.createElement("style");
+    style.textContent = css;
+    document.head.appendChild(style);
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, [css]);
+}
+
+// CSS complet
 const THEME_CSS = `
-  :root{
-    --halo:#171717;
-    --bg0:#000; --bg1:#0b0b0b; --panel:rgba(255,255,255,.08); --panel-strong:rgba(255,255,255,.12);
-    --border:rgba(255,255,255,.18); --text:#fff; --muted:rgba(255,255,255,.65);
-    --btn-bg:rgba(255,255,255,.08); --btn-hover-bg:rgba(255,255,255,.16); --btn-active-bg:rgba(255,255,255,.28); --btn-active-ring:rgba(255,255,255,.65);
-    --primary:#fff; --primary-text:#111; --warn:#f59e0b;
-  }
+:root {
+  --halo: #171717;
+  --bg0: #000;
+  --bg1: #0b0b0b;
+  --panel: rgba(255,255,255,.08);
+  --panel-strong: rgba(255,255,255,.12);
+  --border: rgba(255,255,255,.18);
+  --text: #fff;
+  --muted: rgba(255,255,255,.65);
+  --btn-bg: rgba(255,255,255,.08);
+  --btn-hover-bg: rgba(255,255,255,.16);
+  --btn-active-bg: rgba(255,255,255,.28);
+  --btn-active-ring: rgba(255,255,255,.65);
+  --primary: #fff;
+  --primary-text: #111;
+  --warn: #f59e0b;
+}
 
-  /* Light overrides when [data-theme="light"] on <html> */
-  [data-theme="light"]{
-    --bg0:#ffffff; --bg1:#f7f7f7; --panel:rgba(0,0,0,.04); --panel-strong:rgba(0,0,0,.08);
-    --border:rgba(0,0,0,.18); --text:#111; --muted:rgba(0,0,0,.65);
-    --btn-bg:rgba(0,0,0,.06); --btn-hover-bg:rgba(0,0,0,.12); --btn-active-bg:rgba(0,0,0,.18); --btn-active-ring:rgba(0,0,0,.55);
-    --primary:#111; --primary-text:#fff; --warn:#d97706; --halo:#ffffff;
-  }
+[data-theme="light"] {
+  --bg0: #fff;
+  --bg1: #f7f7f7;
+  --panel: rgba(0,0,0,.04);
+  --panel-strong: rgba(0,0,0,.08);
+  --border: rgba(0,0,0,.18);
+  --text: #111;
+  --muted: rgba(0,0,0,.65);
+  --btn-bg: rgba(0,0,0,.06);
+  --btn-hover-bg: rgba(0,0,0,.12);
+  --btn-active-bg: rgba(0,0,0,.18);
+  --btn-active-ring: rgba(0,0,0,.55);
+  --primary: #111;
+  --primary-text: #fff;
+  --warn: #d97706;
+  --halo: #ffffff;
+}
 
-  html,body,#root{ background: radial-gradient(1200px 1200px at 20% -10%, var(--halo), var(--bg0) 60%), linear-gradient(160deg, var(--bg1), var(--bg0)); color:var(--text); }
-  .glass{ background:var(--panel); -webkit-backdrop-filter:saturate(130%) blur(14px); backdrop-filter:saturate(130%) blur(14px); border:1px solid var(--border); border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,.35) inset, 0 20px 40px rgba(0,0,0,.35); }
-  .glass-strong{ background:var(--panel-strong); }
-  .muted{ color:var(--muted); }
-  .btn{ display:inline-flex; align-items:center; gap:8px; background:var(--btn-bg); border:1px solid var(--border); color:var(--text); border-radius:12px; padding:10px 14px; transition:background .15s, filter .15s, box-shadow .15s, transform .04s; }
-  .btn:hover{ background:var(--btn-hover-bg); }
-  .btn:focus-visible{ outline:none; box-shadow:0 0 0 2px rgba(0,0,0,.6), 0 0 0 3px var(--btn-active-ring); }
-  .btn:active{ transform:translateY(1px); }
-  .btn.glass-strong{ background:var(--btn-active-bg); border-color:rgba(255,255,255,.5); box-shadow:0 0 0 1px rgba(255,255,255,.35), 0 6px 18px rgba(255,255,255,.12) inset; }
-  .btn.glass-strong:hover{ background:rgba(255,255,255,.34); }
-  .btn-primary{ display:inline-flex; align-items:center; gap:8px; background:var(--primary); color:var(--primary-text); border:1px solid rgba(0,0,0,.12); border-radius:16px; padding:10px 16px; box-shadow:0 6px 20px rgba(255,255,255,.12); }
-  .btn-primary:hover{ filter:brightness(.95); }
-  .btn-primary:focus-visible{ outline:none; box-shadow:0 0 0 3px #000, 0 0 0 5px rgba(255,255,255,.85); }
-  .input{ background:rgba(255,255,255,.06); border:1px solid var(--border); color:var(--text); border-radius:10px; padding:8px 10px; }
-  .input::placeholder{ color:rgba(255,255,255,.45); }
-  .list{ background:rgba(0,0,0,.7); border:1px solid var(--border); border-radius:12px; }
-  .autocomplete-list{ max-height:228px; overflow-y:auto; }
-  .bar-bg{ background:rgba(255,255,255,.08); height:8px; border-radius:999px; overflow:hidden; }
-  .bar-fill{ background:linear-gradient(90deg,#fff,rgba(255,255,255,.7)); height:8px; }
-  .dropzone{ border:2px dashed rgba(255,255,255,.45); background:rgba(255,255,255,.04); border-radius:16px; padding:22px; text-align:center; cursor:pointer; transition:background .15s, border-color .15s, box-shadow .15s; }
-  .dropzone:hover{ background:rgba(255,255,255,.08); }
-  .dropzone.drag{ background:rgba(255,255,255,.12); border-color:rgba(255,255,255,.85); box-shadow:0 0 0 3px rgba(255,255,255,.2) inset; }
-  .sr-only{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
-  .mana{ display:inline-flex; align-items:center; gap:4px; }
-  .badge{ position:absolute; top:4px; right:4px; background:rgba(0,0,0,.7); color:#fff; font-size:11px; padding:2px 6px; border-radius:999px; border:1px solid rgba(255,255,255,.2) }
+html, body, #root {
+  background: radial-gradient(1200px 1200px at 20% -10%, var(--halo), var(--bg0) 60%),
+              linear-gradient(160deg, var(--bg1), var(--bg0));
+  color: var(--text);
+  font-family: sans-serif;
+  margin: 0;
+  padding: 0;
+}
 
-  /* ===== Mobile-only UX tweaks ===== */
-  @media (max-width: 767px){
-    .header-wrap{ display:flex; flex-direction:column; align-items:flex-start; gap:12px; }
-    .header-actions{ width:100%; display:grid; grid-template-columns: 1fr; gap:8px; }
-    .header-actions .btn, .header-actions .btn-primary{ width:100%; justify-content:center; }
-    .section-anchor{ scroll-margin-top: 12px; }
-  }
+.btn {
+  background: var(--btn-bg);
+  color: var(--text);
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+.btn:hover { background: var(--btn-hover-bg); }
+.btn:active { background: var(--btn-active-bg); }
 
-  /* Respect reduced motion for the auto-scroll */
-  @media (prefers-reduced-motion: reduce){
-    .smooth-scroll-disabled{ scroll-behavior: auto !important; }
-  }
+.btn-primary {
+  background: var(--primary);
+  color: var(--primary-text);
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+}
+.btn-primary:hover { opacity: 0.9; }
 `;
 
 /***************** Utils & Const *****************/
