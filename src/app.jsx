@@ -491,7 +491,7 @@ export default function App(){
           <h1 className="text-2xl md:text-4xl font-semibold tracking-tight">MTG Commander Deck Generator — <span className="muted">v6.6</span></h1>
           <div className="header-actions lg:flex lg:gap-2 lg:w-auto">
             {/* THEME TOGGLE */}
-            <ThemeToggle theme={theme} onToggle={toggleTheme} />
+            <ThemeToggle theme={theme} onToggle={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />
             <button className="btn" onClick={copyList}><Copy className="inline-block h-4 w-4"/>Copier</button>
             <button className="btn" onClick={exportJson}><Download className="inline-block h-4 w-4"/>JSON</button>
             <button className="btn-primary" onClick={exportTxt}><Download className="inline-block h-4 w-4"/>TXT</button>
