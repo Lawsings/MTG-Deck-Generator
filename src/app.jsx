@@ -490,7 +490,7 @@ export default function App(){
       <div className="max-w-7xl mx-auto px-6 py-10">
         {/* HEADER: mobile fixes via header-wrap/header-actions classes */}
         <header className="header-wrap lg:flex lg:items-center lg:justify-between lg:gap-4">
-          <h1 className="text-2xl md:text-4xl font-semibold tracking-tight">MTG Commander Deck Generator — <span className="muted">v6.6</span></h1>
+          <h1 className="text-2xl md:text-4xl font-semibold tracking-tight">Commander Craft — <span className="muted">v6.6</span></h1>
           <div className="header-actions lg:flex lg:gap-2 lg:w-auto">
             {/* THEME TOGGLE */}
             <ThemeToggle theme={theme} onToggle={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />
