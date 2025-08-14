@@ -466,7 +466,7 @@ export default function App(){
 
         <div className="grid lg:grid-cols-3 gap-8 mt-8">
           {/* Paramètres */}
-          <div className="glass p-6 lg:col-span-1 order-2 lg:order-1">
+          <div className="glass p-6 lg:col-span-1">
             <div className="flex items-center gap-2 mb-4"><Settings2 className="h-5 w-5"/><h2 className="font-medium">Paramètres</h2></div>
 
             {/* Commandant */}
@@ -556,7 +556,7 @@ export default function App(){
           </div>
 
           {/* Right column */}
-          <div className="lg:col-span-2 space-y-8 order-1 lg:order-2">
+          <div className="lg:col-span-2 space-y-8">
             {/* Collection */}
             <div className="glass p-6">
               <div className="flex items-center gap-2 mb-4"><Upload className="h-5 w-5"/><h2 className="font-medium">Collection personnelle (optionnel)</h2></div>
