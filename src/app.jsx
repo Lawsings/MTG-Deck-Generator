@@ -542,7 +542,55 @@ export default function App(){
               <div className="space-y-1"><span>Autoriser Background</span><p className="text-xs muted">Si le commandant le permet.</p></div>
               <input type="checkbox" checked={allowBackground} onChange={e=>setAllowBackground(e.target.checked)} />
             </div>
-
+            {/* Collection (mobile seulement) */}
+            <div className="lg:hidden">
+              {/* >>> Copie EXACTE du bloc “Collection” lignes 561 à 584 <<< */}
+              <div className="glass p-6">
+                <div className="flex items-center gap-2 mb-4">
+                  {/* même icône qu’originale */}
+                  <h2 className="font-medium">Collection personnelle (optionnel)</h2>
+                </div>
+            
+                <p className="text-sm muted">
+                  Importe un ou plusieurs fichiers pour prioriser tes cartes lors de la génération.
+                </p>
+            
+                {/* Même composant d’upload que l’original */}
+                <div className="mt-3">
+                  <FileDrop
+                    onFiles={async (files)=>{
+                      for (const f of files){ await handleCollectionFile(f); }
+                    }}
+                  />
+                </div>
+            
+                <div className="mt-3 text-sm">
+                  {uploadedFiles.length>0 ? (
+                    <div className="space-y-2">
+                      <div className="muted text-xs">Fichiers importés ({uploadedFiles.length}) :</div>
+                      <ul className="grid md:grid-cols-2 gap-2">
+                        {uploadedFiles.map(f=> (
+                          <li key={f.id} className="flex items-center justify-between glass-strong rounded-lg px-3 py-1.5">
+                            <span className="truncate" title={f.name}>{f.name}</span>
+                            <button className="btn" onClick={()=>removeUploadedFile(f.id)} title="Supprimer ce fichier">
+                              <Trash2 className="h-4 w-4"/>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : (
+                    <div className="muted">Aucun fichier importé pour l’instant.</div>
+                  )}
+                </div>
+            
+                <div className="flex items-center justify-between mt-3">
+                  <p>Cartes reconnues: <span className="font-semibold">{ownedMap.size}</span></p>
+                  <button className="btn" onClick={clearCollection}>Réinitialiser</button>
+                </div>
+              </div>
+            </div>
+            
             <button className="mt-5 w-full btn-primary justify-center" disabled={loading} onClick={generate}>
               {loading? (<RefreshCcw className="h-4 w-4 animate-spin"/>):(<Shuffle className="h-4 w-4"/>)} {loading?"Génération...":"Générer un deck"}
             </button>
@@ -558,7 +606,7 @@ export default function App(){
           {/* Right column */}
           <div className="lg:col-span-2 space-y-8">
             {/* Collection */}
-            <div className="glass p-6">
+            <div className="glass p-6 hidden lg:block">
               <div className="flex items-center gap-2 mb-4"><Upload className="h-5 w-5"/><h2 className="font-medium">Collection personnelle (optionnel)</h2></div>
               <p className="text-sm muted">Importe un ou plusieurs fichiers pour prioriser tes cartes lors de la génération.</p>
               <div className="mt-3"><FileDrop onFiles={async (files)=>{ for(const f of files){ await handleCollectionFile(f); } }}/></div>
