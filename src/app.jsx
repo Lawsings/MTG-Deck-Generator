@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCcw, Shuffle, Copy, Download, Upload, Settings2, Info, Sparkles, Trash2, Sun, Moon } from "lucide-react";
 
 /**
- * MTG Commander Deck Generator — v6.6
+ * Commander Craft - Générateur de decks MTG Commander
  *
  * Changes from v6.5 (mobile-only UX earlier) + NEW:
  *  - Functional Dark / Light mode toggle with persistence (localStorage) and system default.
