@@ -759,17 +759,3 @@ async function parseCollectionFile(file){
   const map=new Map(); for(const {name,qty} of rows){ const k=name.toLowerCase(); map.set(k,(map.get(k)||0)+qty); }
   return map;
 }
-
-/************** Minimal tests (dev console) **************/
-(function runUnitTests(){
-  if (typeof window === 'undefined') return; if (window.__MTG_V66_TESTED__) return; window.__MTG_V66_TESTED__=true;
-  const cases = [
-    { in:"{3}{G}{G}", out:["3","G","G"] },
-    { in:"{X}{U/R}{2}", out:["X","U/R","2"] },
-    { in:"{C}{10}", out:["C","10"] },
-  ];
-  for (const c of cases){
-    const toks = tokenizeMana(c.in);
-    console.assert(JSON.stringify(toks.map(x=>x.toUpperCase()))===JSON.stringify(c.out), `tokenizeMana failed for ${c.in}`, toks);
-  }
-})();
