@@ -61,11 +61,11 @@ export async function generate(opts) {
   if (commanderMode === "select" && chosenCommander) {
     commanderCard = await sfNamedExact(chosenCommander);
   } else {
-    let q = `legal:commander (type:"legendary creature" or (type:planeswalker and o:"can be your commander") or type:background)`;
+    // Ajout de game:paper et exclusion des cartes "funny"
+    let q = `legal:commander game:paper -is:funny (type:"legendary creature" or (type:planeswalker and o:"can be your commander") or type:background)`;
     if (desiredCI && desiredCI.length > 0) {
-      q += ` ${identityToQuery(desiredCI)}`; // ex: id<=R
+      q += ` ${identityToQuery(desiredCI)}`; // id<=WUBRG si fourni
     }
-
     commanderCard = await sfRandom(q);
   }
   if (!commanderCard || !isCommanderLegal(commanderCard)) {
@@ -77,7 +77,8 @@ export async function generate(opts) {
   // 2) Construire le pool de cartes non-terrains
   progress(20, "Création du pool de cartes…");
   const baseFilter = identityToQuery(commanderCI); // "" si incolore
-  const baseQ = `-type:land legal:commander ${baseFilter}`.trim();
+  // Ajout de game:paper et -is:funny pour la qualité du pool
+  const baseQ = `-type:land legal:commander game:paper -is:funny ${baseFilter}`.trim();
   const res = await sfSearch(`${baseQ} order:edhrec unique:prints`);
   const poolRaw = (res?.data || []).filter(isCommanderLegal);
 
@@ -86,7 +87,7 @@ export async function generate(opts) {
   const mechSet = new Set((mechanics || []).map((m) => String(m || "").toLowerCase()));
 
   function passMechanics(_c) {
-    // On ne filtre pas dur pour ne pas rater des cartes utiles : on score avec synergyBonus.
+    // Pas de filtre dur pour ne pas rater des cartes utiles : on score avec synergyBonus.
     return true;
   }
 
@@ -196,12 +197,62 @@ export async function generate(opts) {
   progress(85, "Construction de la base de terrains…");
   const lands = await buildManabase(commanderCI, Number(targetLands) || 36, Number(deckBudget) || 0);
 
-  // 7) Done
+  // 7) Compléter jusqu’à 99 cartes (hors commandant)
+  let nonlandsFinal = [...nonlands];
+  let landsFinal = [...lands];
+
+  // Utilitaires
+  const needCount = () => 99 - (nonlandsFinal.length + landsFinal.length);
+  const alreadyPicked = new Set(nonlandsFinal.map(c => (c.name || "") + ":" + (c.mana_cost || "")));
+
+  // 7.1 Compléter avec des sorts low/mid CMC depuis le pool restant (sous budget)
+  let deficit = needCount();
+  if (deficit > 0) {
+    const remainder = [];
+    for (const c of pool) {
+      const k = (c.name || "") + ":" + (c.mana_cost || "");
+      if (alreadyPicked.has(k)) continue;
+      // garde-fou budget doux
+      const price = priceEUR(c);
+      if (deckBudget > 0 && price > deckBudget * 1.2) continue;
+      remainder.push(c);
+    }
+    // priorité aux low → mid → high
+    const low = remainder.filter(c => (Number(c.cmc) || 0) <= 2);
+    const mid = remainder.filter(c => (Number(c.cmc) || 0) >= 3 && (Number(c.cmc) || 0) <= 4);
+    const high = remainder.filter(c => (Number(c.cmc) || 0) >= 5);
+    const prioritized = [...low, ...mid, ...high];
+
+    for (const c of prioritized) {
+      if (deficit <= 0) break;
+      const k = (c.name || "") + ":" + (c.mana_cost || "");
+      if (alreadyPicked.has(k)) continue;
+      nonlandsFinal.push(bundleCard(c));
+      alreadyPicked.add(k);
+      deficit = needCount();
+    }
+  }
+
+  // 7.2 S’il manque encore, ajouter des basiques
+  if (needCount() > 0) {
+    // import dynamique pour éviter un import circulaire ou alourdir le bundle
+    const { suggestBasicLands } = await import("./lands");
+    const basicsNeeded = needCount();
+    const basics = suggestBasicLands(commanderCI, basicsNeeded).map(b => ({
+      name: b.name,
+      type_line: b.type_line || "Land",
+      cmc: 0,
+      oracle_en: "",
+    }));
+    landsFinal = [...landsFinal, ...basics].slice(0, 99 - nonlandsFinal.length); // clamp au cas où
+  }
+
+  // 8) Done
   progress(100, "Terminé !");
   await sleep(100); // petite pause pour l’UX
 
   return {
-    deck: { commander: bundleCard(commanderCard), nonlands, lands },
+    deck: { commander: bundleCard(commanderCard), nonlands: nonlandsFinal, lands: landsFinal },
     counts,
   };
 }
