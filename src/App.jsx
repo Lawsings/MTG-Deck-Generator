@@ -28,7 +28,7 @@ import useCommanderResolution from "./hooks/useCommanderResolution";
 
 // Utils cartes
 import {
-  identityToQuery,
+  identityToQuery,   // ← utilise maintenant id<=...
   isCommanderLegal,
   getCI,
   priceEUR,
@@ -52,7 +52,7 @@ import { saveState, loadState } from "./utils/storage";
 import { toText, toMoxfieldCSV, toArchidektCSV, downloadFile } from "./utils/exports";
 
 // =========================
-// Constantes légères
+// Constantes
 // =========================
 const MECHANIC_TAGS = ["blink", "treasure", "sacrifice", "lifegain", "tokens", "reanimation"];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -172,10 +172,10 @@ export default function App() {
       if (commanderMode === "random" || !commander) {
         stepProgress(10, "Choix du commandant…");
 
-        // ✅ Construire la requête sans filtre de couleurs si desiredCI est vide
+        // ✅ Construire la requête SANS filtre si desiredCI est vide
         let q = `legal:commander (type:\\\"legendary creature\\\" or (type:planeswalker and o:\\\"can be your commander\\\") or type:background)`;
         if (desiredCI && desiredCI.length > 0) {
-          q += ` ${identityToQuery(desiredCI)}`;
+          q += ` ${identityToQuery(desiredCI)}`; // ← id<=WUBRG (corrigé)
         }
 
         const rnd = await sfRandom(q);
@@ -185,7 +185,9 @@ export default function App() {
       }
 
       stepProgress(30, "Recherche du pool de cartes…");
-      const baseQ = `-type:land legal:commander ${identityToQuery(getCI(commander))}`;
+      const commanderCI = getCI(commander); // ex: "WRG"
+      const baseFilter = identityToQuery(commanderCI); // "" si vide, sinon id<=WRG
+      const baseQ = `-type:land legal:commander ${baseFilter}`.trim();
       const res = await sfSearch(`${baseQ} order:edhrec unique:prints`);
       const poolRaw = (res?.data || []).filter(isCommanderLegal);
 
@@ -244,7 +246,7 @@ export default function App() {
 
       // Manabase (staples + basiques) selon l'identité de couleur et le slider
       stepProgress(85, "Génération des terrains…");
-      const lands = buildManabase(getCI(commander), targetLands);
+      const lands = buildManabase(commanderCI, targetLands);
 
       setDeck({ commander: bundleCard(commander), nonlands, lands });
 
