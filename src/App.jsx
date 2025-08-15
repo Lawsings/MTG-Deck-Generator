@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
-// UI (extraits passes 1→4)
+// UI (passes 1→5)
 import ThemeToggle from "./components/controls/ThemeToggle";
 import ManaCost from "./components/cards/ManaCost";
 import CardModal from "./components/cards/CardModal";
@@ -12,7 +12,15 @@ import Sliders from "./components/controls/Sliders";
 import TargetsEditor from "./components/controls/TargetsEditor";
 import GenerateButton from "./components/controls/GenerateButton";
 import LoadingModal from "./components/misc/LoadingModal";
-import { RefreshCcw, Sparkles } from "lucide-react";
+
+// Résultats (Passe 5)
+import CommanderBlock from "./components/result/CommanderBlock";
+import BalanceIndicators from "./components/result/BalanceIndicators";
+import NonlandGroups from "./components/result/NonlandGroups";
+import LandsGrid from "./components/result/LandsGrid";
+import StatsBlock from "./components/result/StatsBlock";
+
+import { RefreshCcw } from "lucide-react";
 
 // Hooks
 import useCommanderResolution from "./hooks/useCommanderResolution";
@@ -23,7 +31,6 @@ import {
   isCommanderLegal,
   getCI,
   priceEUR,
-  primaryTypeLabel,
   bundleCard,
 } from "./utils/cards";
 
@@ -72,6 +79,7 @@ export default function App() {
 
   // Résultat deck
   const [deck, setDeck] = useState({ commander: null, nonlands: [], lands: [] });
+  const [balanceCounts, setBalanceCounts] = useState({ ramp: 0, draw: 0, removal: 0, wraths: 0 });
 
   // Modale carte
   const [openModal, setOpenModal] = useState(false);
@@ -84,6 +92,9 @@ export default function App() {
     setDesiredCI,
     setError
   );
+
+  // Ref pour scroll vers le bloc commandant
+  const commanderRef = useRef(null);
 
   // ===== Collection handlers =====
   async function handleCollectionFiles(files) {
@@ -133,7 +144,7 @@ export default function App() {
       let commander = selectedCommanderCard;
       if (commanderMode === "random" || !commander) {
         stepProgress(10, "Choix du commandant…");
-        const q = `legal:commander (type:\"legendary creature\" or (type:planeswalker and o:\"can be your commander\") or type:background) ${identityToQuery(desiredCI)}`;
+        const q = `legal:commander (type:\\\"legendary creature\\\" or (type:planeswalker and o:\\\"can be your commander\\\") or type:background) ${identityToQuery(desiredCI)}`;
         const rnd = await sfRandom(q);
         commander = rnd;
         setChosenCommander(rnd?.name || "");
@@ -151,20 +162,32 @@ export default function App() {
         if (deckBudget > 0 && priceEUR(c) > deckBudget) return false;
         if (mechSet.size) {
           const text = (c.oracle_text || "").toLowerCase();
-          let ok = false;
-          for (const m of mechSet) { if (text.includes(m)) { ok = true; break; } }
+          let ok = false; for (const m of mechSet) { if (text.includes(m)) { ok = true; break; } }
           if (!ok) return false;
         }
         return true;
       });
 
       stepProgress(75, "Sélection et équilibrage de base…");
-      // Démo : on prend 30 sorts ; l’équilibrage fin par cibles sera en Passe 5
+      // Démo : on prend 30 sorts ; l’équilibrage fin par cibles sera affiné ensuite
       const chosen = filtered.slice(0, 30);
       const nonlands = chosen.map((c) => bundleCard(c));
-      const lands = []; // TODO: utiliser targetLands et targets en Passe 5
+      const lands = []; // TODO: utiliser targetLands + couleurs pour générer une base de terrains
+
+      // Compteurs pour BalanceIndicators (rapides)
+      const counts = { ramp: 0, draw: 0, removal: 0, wraths: 0 };
+      for (const c of nonlands) {
+        const text = (c.oracle_en || "").toLowerCase();
+        if (/add [wubrgc]/.test(text) || /search your library.*land/.test(text)) counts.ramp++;
+        if (/draw .* card/.test(text)) counts.draw++;
+        if (/destroy target|exile target|counter target/.test(text)) counts.removal++;
+        if (/destroy all .*creature|wrath|damnation|farewell|supreme verdict/.test(text)) counts.wraths++;
+      }
+      setBalanceCounts(counts);
 
       setDeck({ commander: bundleCard(commander), nonlands, lands });
+      // Scroll vers le commandant (utile mobile)
+      setTimeout(() => { commanderRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, 100);
       endProgress();
     } catch (e) {
       console.error(e);
@@ -197,8 +220,6 @@ export default function App() {
       </div>
     );
   }, [deck]);
-
-  function openCard(c) { setModalCard(c); setOpenModal(true); }
 
   // ===== Render =====
   return (
@@ -299,22 +320,31 @@ export default function App() {
         {deck?.commander && (
           <div className="panel p-4 rounded-xl border">
             <h2 className="font-semibold mb-3">Commandant sélectionné</h2>
-            {commanderDisplay}
+            <CommanderBlock ref={commanderRef} commander={deck.commander} />
           </div>
         )}
+
+        {(deck?.nonlands?.length || deck?.lands?.length) ? (
+          <div className="panel p-4 rounded-xl border">
+            <h2 className="font-semibold mb-3">Statistiques du deck</h2>
+            <StatsBlock deck={deck} ownedMap={ownedMap} />
+            <div className="mt-4">
+              <BalanceIndicators counts={balanceCounts} targets={targets} />
+            </div>
+          </div>
+        ) : null}
 
         {deck?.nonlands?.length > 0 && (
           <div className="panel p-4 rounded-xl border">
             <h2 className="font-semibold mb-3">Sorts non-terrains</h2>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {deck.nonlands.map((c) => (
-                <button key={c.name + c.mana_cost} className="text-left rounded-lg p-3 border hover:opacity-90" style={{ background: "var(--bg2)", borderColor: "var(--border)" }} onClick={() => { setModalCard(c); setOpenModal(true); }}>
-                  <div className="font-medium mb-1 truncate">{c.name}</div>
-                  {c.mana_cost && <div className="text-xs"><ManaCost cost={c.mana_cost} /></div>}
-                  <div className="text-[11px] opacity-80 truncate">{c.type_line}</div>
-                </button>
-              ))}
-            </div>
+            <NonlandGroups cards={deck.nonlands} onOpen={(c)=>{ setModalCard(c); setOpenModal(true); }} />
+          </div>
+        )}
+
+        {deck?.lands?.length > 0 && (
+          <div className="panel p-4 rounded-xl border">
+            <h2 className="font-semibold mb-3">Terrains ({deck.lands.length})</h2>
+            <LandsGrid lands={deck.lands} />
           </div>
         )}
       </section>
