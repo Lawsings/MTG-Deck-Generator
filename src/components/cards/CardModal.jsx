@@ -26,3 +26,4 @@ export default function CardModal({open, card, owned, onClose}){
       </div>
     </div>
   );
+}
