@@ -94,3 +94,19 @@
     filter: brightness(1.05);
   }
 }
+@layer components {
+  .chip {
+    @apply border rounded-full px-3 py-1 text-sm;
+    background: var(--bg2);
+    border-color: var(--border);
+    color: var(--text);
+  }
+  .selected-chip {
+    @apply border rounded-full px-3 py-1 text-sm;
+    background: color-mix(in srgb, var(--text) 10%, var(--bg2));
+    border-color: var(--border);
+    color: var(--text);
+  }
+  .range { @apply w-full; }
+  .field { @apply space-y-1; }
+}
