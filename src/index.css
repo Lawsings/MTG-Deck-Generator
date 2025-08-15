@@ -115,3 +115,6 @@
   .stat-label { @apply text-xs opacity-70; }
   .stat-value { @apply text-lg font-semibold; }
 }
+@layer components {
+  .btn-primary:active { transform: translateY(0.5px); }
+}
