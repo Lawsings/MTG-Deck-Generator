@@ -87,6 +87,6 @@ export function roleOf(card){
   if (/destroy all .*creature|wrath|damnation|farewell|supreme verdict/.test(t)) return "wraths";
   if (/destroy target|exile target|counter target/.test(t)) return "removal";
   if (/draw .* card/.test(t)) return "draw";
-  if (/add [wubrgc]/.test(t) || /search your library.*land/.test(t)). return "ramp";
+  if (/add [wubrgc]/.test(t) || /search your library.*land/.test(t)) return "ramp";
   return "other";
 }

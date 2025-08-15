@@ -32,7 +32,11 @@ import {
   getCI,
   priceEUR,
   bundleCard,
+  roleOf,                // ← ajouté depuis utils/cards.js
 } from "./utils/cards";
+
+// Terrains
+import { suggestBasicLands } from "./utils/lands";
 
 // API Scryfall
 import { search as sfSearch, random as sfRandom } from "./api/scryfall";
@@ -45,6 +49,36 @@ import { parseCollectionFile } from "./utils/collection";
 // =========================
 const MECHANIC_TAGS = ["blink", "treasure", "sacrifice", "lifegain", "tokens", "reanimation"];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ===== Helpers export =====
+function asDeckText(deck){
+  if(!deck) return "";
+  const lines = [];
+  if(deck.commander) lines.push(`Commander: ${deck.commander.name}`);
+  lines.push("");
+  if(deck.nonlands?.length){
+    lines.push("Nonlands:");
+    for(const c of deck.nonlands) lines.push(`1 ${c.name}`);
+    lines.push("");
+  }
+  if(deck.lands?.length){
+    lines.push("Lands:");
+    const map = new Map();
+    for(const c of deck.lands){
+      const k = c.name;
+      map.set(k, (map.get(k)||0)+1);
+    }
+    for(const [name,qty] of map) lines.push(`${qty} ${name}`);
+  }
+  return lines.join("\n");
+}
+function download(filename, text){
+  const blob = new Blob([text], {type: "text/plain;charset=utf-8"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function App() {
   // Thème
@@ -135,7 +169,7 @@ export default function App() {
   function stepProgress(p, m) { setProgress(Math.max(0, Math.min(100, p))); if (m) setProgressMsg(m); }
   function endProgress() { setProgress(100); setProgressMsg("Finalisation…"); }
 
-  // ===== Génération (démo) =====
+  // ===== Génération =====
   async function generateDeck() {
     setError("");
     setLoading(true);
@@ -154,38 +188,70 @@ export default function App() {
       stepProgress(30, "Recherche du pool de cartes…");
       const baseQ = `-type:land legal:commander ${identityToQuery(getCI(commander))}`;
       const res = await sfSearch(`${baseQ} order:edhrec unique:prints`);
-      const pool = (res?.data || []).slice(0, 120).filter(isCommanderLegal);
+      const poolRaw = (res?.data || []).filter(isCommanderLegal);
 
-      stepProgress(55, "Filtrage par mécaniques et budget…");
-      const mechSet = new Set((mechanics || []).map((s) => s.toLowerCase()));
-      const filtered = pool.filter((c) => {
-        if (deckBudget > 0 && priceEUR(c) > deckBudget) return false;
-        if (mechSet.size) {
-          const text = (c.oracle_text || "").toLowerCase();
-          let ok = false; for (const m of mechSet) { if (text.includes(m)) { ok = true; break; } }
-          if (!ok) return false;
+      // Scoring (EDHREC / Owned / Budget)
+      const owned = ownedMap || new Map();
+      function scoreOf(c) {
+        const edh = 1 - Math.min(100000, Number(c.edhrec_rank || 100000)) / 100000; // 0..1
+        const have = owned.get((c.name || "").toLowerCase()) > 0 ? 1 : 0;            // 0/1
+        const price = Number(c?.prices?.eur) || Number(c?.prices?.eur_foil) || 0;
+        const budgetOk = deckBudget <= 0 ? 1 : (price <= deckBudget ? 1 : 0.3);
+        return (edhrecWeight/100)*edh + (ownedWeight/100)*have + 0.2*budgetOk;
+      }
+
+      stepProgress(45, "Tri du pool…");
+      const pool = [...poolRaw].sort((a,b)=> scoreOf(b)-scoreOf(a));
+
+      // Équilibrage par rôles (atteindre minima)
+      const want = { ramp:targets.ramp[0], draw:targets.draw[0], removal:targets.removal[0], wraths:targets.wraths[0] };
+      const have = { ramp:0, draw:0, removal:0, wraths:0 };
+
+      const pick = [];
+      const seen = new Set();
+
+      function keyOf(c){ return (c.name||"")+":"+(c.mana_cost||""); }
+
+      stepProgress(60, "Équilibrage vers les cibles…");
+      for (const c of pool) {
+        if (pick.length >= 30) break;
+        const r = roleOf(c);
+        if (r !== "other" && have[r] < want[r]) {
+          const k = keyOf(c);
+          if (seen.has(k)) continue;
+          pick.push(c); seen.add(k); have[r]++;
         }
-        return true;
-      });
+      }
 
-      stepProgress(75, "Sélection et équilibrage de base…");
-      // Démo : on prend 30 sorts ; l’équilibrage fin par cibles sera affiné ensuite
-      const chosen = filtered.slice(0, 30);
-      const nonlands = chosen.map((c) => bundleCard(c));
-      const lands = []; // TODO: utiliser targetLands + couleurs pour générer une base de terrains
+      // Compléter jusqu'à 30
+      stepProgress(72, "Complément de sélection…");
+      for (const c of pool) {
+        if (pick.length >= 30) break;
+        const k = keyOf(c);
+        if (seen.has(k)) continue;
+        const price = Number(c?.prices?.eur) || Number(c?.prices?.eur_foil) || 0;
+        if (deckBudget > 0 && price > deckBudget*1.5) continue;
+        pick.push(c); seen.add(k);
+      }
 
-      // Compteurs pour BalanceIndicators (rapides)
-      const counts = { ramp: 0, draw: 0, removal: 0, wraths: 0 };
+      const nonlands = pick.map(bundleCard);
+
+      // Compteurs pour les indicateurs
+      const counts = { ramp:0, draw:0, removal:0, wraths:0 };
       for (const c of nonlands) {
-        const text = (c.oracle_en || "").toLowerCase();
-        if (/add [wubrgc]/.test(text) || /search your library.*land/.test(text)) counts.ramp++;
-        if (/draw .* card/.test(text)) counts.draw++;
-        if (/destroy target|exile target|counter target/.test(text)) counts.removal++;
-        if (/destroy all .*creature|wrath|damnation|farewell|supreme verdict/.test(text)) counts.wraths++;
+        const r = roleOf(c);
+        if (counts[r] != null) counts[r] += 1;
       }
       setBalanceCounts(counts);
 
-      setDeck({ commander: bundleCard(commander), nonlands, lands });
+      // Terrains basiques depuis l'identité de couleur + slider
+      stepProgress(85, "Génération des terrains…");
+      const basics = suggestBasicLands(getCI(commander), targetLands).map(x => ({
+        name: x.name, type_line: x.type_line, cmc: 0, oracle_en: ""
+      }));
+
+      setDeck({ commander: bundleCard(commander), nonlands, lands: basics });
+
       // Scroll vers le commandant (utile mobile)
       setTimeout(() => { commanderRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, 100);
       endProgress();
@@ -227,7 +293,11 @@ export default function App() {
       {/* Header */}
       <header className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Commander Craft</h1>
-        <ThemeToggle theme={theme} onToggle={() => setTheme(theme === "dark" ? "light" : "dark")} />
+        <div className="flex items-center gap-2">
+          <button className="btn-primary" onClick={()=>navigator.clipboard.writeText(asDeckText(deck))}>Copier</button>
+          <button className="btn-primary" onClick={()=>download("deck.txt", asDeckText(deck))}>Exporter</button>
+          <ThemeToggle theme={theme} onToggle={() => setTheme(theme === "dark" ? "light" : "dark")} />
+        </div>
       </header>
 
       {/* Zone paramètres */}
