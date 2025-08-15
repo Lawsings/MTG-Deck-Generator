@@ -1,3 +1,4 @@
+import { bundleByName } from "./utils/cards";
 import ThemeToggle from "./components/controls/ThemeToggle";
 import ManaCost from "./components/cards/ManaCost";
 import CardModal from "./components/cards/CardModal";
@@ -185,7 +186,7 @@ function bundleCard(c){
     scryfall_uri: c.scryfall_uri || c.related_uris?.gatherer || ''
   };
 }
-async function bundleByName(name){ const c = await sf.namedExact(name); return bundleCard(c); }
+async function bundleByName(name){ const c = await bundleByName(name); return bundleCard(c); }
 const primaryTypeLabel = (tl)=>{
   const t=(tl||"").toLowerCase();
   if(t.includes("creature")) return "Créatures";
@@ -254,10 +255,10 @@ export default function App(){
   const buildManaBase=(ci, basicTarget)=>{ const colors=(ci||"").split(""); const basicsByColor={W:"Plains",U:"Island",B:"Swamp",R:"Mountain",G:"Forest"}; if(colors.length===0) return { Wastes: basicTarget }; const per=Math.floor(basicTarget/colors.length); let rem=basicTarget - per*colors.length; const lands={}; for(const c of colors){ const n=basicsByColor[c]; lands[n]=per+(rem>0?1:0); rem--; } return lands; };
   const countCats=(cards)=> cards.reduce((a,c)=>({ ramp:a.ramp+(RE.RAMP.test(oracle(c))||((c.type_line||'').toLowerCase().includes('artifact')&&oracle(c).includes('add one mana'))?1:0), draw:a.draw+(RE.DRAW.test(oracle(c))?1:0), removal:a.removal+(RE.REMOVAL.test(oracle(c))?1:0), wraths:a.wraths+(RE.WRATHS.test(oracle(c))?1:0)}),{ramp:0,draw:0,removal:0,wraths:0});
   const balanceSpells=(picks, pool, budget, spent)=>{ const TARGETS={ ramp:targets.ramp.min, draw:targets.draw.min, removal:targets.removal.min, wraths:targets.wraths.min }; const byName=new Set(picks.map(nameOf)); const counts=countCats(picks); const sorted=sortByPreference(pool); const fits=(cat,c)=> (cat==='ramp'&&RE.RAMP.test(oracle(c)))||(cat==='draw'&&RE.DRAW.test(oracle(c)))||(cat==='removal'&&RE.REMOVAL.test(oracle(c)))||(cat==='wraths'&&RE.WRATHS.test(oracle(c))); const res=[...picks]; for(const cat of Object.keys(TARGETS)){ if(counts[cat]>=TARGETS[cat]) continue; for(const c of sorted){ const n=nameOf(c); if(byName.has(n)) continue; const p=priceEUR(c); if(budget>0 && (spent+p)>budget) continue; if(!fits(cat,c)) continue; const idx=res.findIndex(x=>!fits(cat,x)); if(idx>=0){ byName.delete(nameOf(res[idx])); res[idx]=c; byName.add(n); counts[cat]++; spent+=p; } if(counts[cat]>=TARGETS[cat]) break; } } return {picks:res,spent,targets:TARGETS,counts}; };
-  const pickCommander=async(ci)=>{ if (commanderMode==='select' && selectedCommanderCard) return selectedCommanderCard; const q=["legal:commander","is:commander","game:paper","-is:funny", ci?identityToQuery(ci):"", "(type:\"legendary creature\" or (type:planeswalker and o:\"can be your commander\") or type:background)"].filter(Boolean).join(" "); for(let i=0;i<6;i++){ const c=await sf.random(q); if(!isCommanderLegal(c)) continue; if(oracle(c).includes("companion")) continue; return c; } throw new Error("Impossible de trouver un commandant aléatoire conforme."); };
-  const maybeAddPartner=async(primary)=>{ const has=(oracle(primary).includes("partner")||(primary.keywords||[]).some(k=>k.toLowerCase().includes("partner"))); if(!allowPartner||!has) return null; const q=["legal:commander","is:commander","game:paper","-is:funny","(keyword:partner or o:\"Partner with\")"].join(" "); for(let i=0;i<12;i++){ const c=await sf.random(q); if(!isCommanderLegal(c)) continue; if(nameOf(c)===nameOf(primary)) continue; return c; } return null; };
-  const maybeAddBackground=async(primary)=>{ const wants=allowBackground && oracle(primary).includes("choose a background"); if(!wants) return null; const q=["legal:commander","type:background","game:paper", identityToQuery(getCI(primary)||"wubrg")].join(" "); for(let i=0;i<10;i++){ const c=await sf.random(q); if(!isCommanderLegal(c)) continue; return c; } return null; };
-  const fetchPool=async(ci)=>{ const base=`legal:commander game:paper ${identityToQuery(ci)} -is:funny`; const mech = mechanics.length ? ` (${mechanics.map(k=>{ const tag=MECHANIC_TAGS.find(m=>m.key===k); if(!tag) return ""; const parts=tag.matchers.map(m=>`o:\"${m}\"`).join(" or "); return `(${parts})`; }).join(" or ")})` : ""; const spellsQ=`${base} -type:land -type:background${mech}`; const landsQ =`${base} type:land -type:basic`; const gather=async(q,b,pages=2)=>{ let page=await sf.search(q,{unique:"cards", order:"random"}); b.push(...page.data); for(let i=1;i<pages && page.has_more;i++){ await sleep(100); page=await fetch(page.next_page).then(r=>r.json()); b.push(...page.data);} }; const spells=[], lands=[]; await gather(spellsQ,spells,2); await gather(landsQ,lands,1); return { spells:distinctByName(spells).filter(isCommanderLegal), lands:distinctByName(lands).filter(isCommanderLegal) }; };
+  const pickCommander=async(ci)=>{ if (commanderMode==='select' && selectedCommanderCard) return selectedCommanderCard; const q=["legal:commander","is:commander","game:paper","-is:funny", ci?identityToQuery(ci):"", "(type:\"legendary creature\" or (type:planeswalker and o:\"can be your commander\") or type:background)"].filter(Boolean).join(" "); for(let i=0;i<6;i++){ const c=await sfRandom(q); if(!isCommanderLegal(c)) continue; if(oracle(c).includes("companion")) continue; return c; } throw new Error("Impossible de trouver un commandant aléatoire conforme."); };
+  const maybeAddPartner=async(primary)=>{ const has=(oracle(primary).includes("partner")||(primary.keywords||[]).some(k=>k.toLowerCase().includes("partner"))); if(!allowPartner||!has) return null; const q=["legal:commander","is:commander","game:paper","-is:funny","(keyword:partner or o:\"Partner with\")"].join(" "); for(let i=0;i<12;i++){ const c=await sfRandom(q); if(!isCommanderLegal(c)) continue; if(nameOf(c)===nameOf(primary)) continue; return c; } return null; };
+  const maybeAddBackground=async(primary)=>{ const wants=allowBackground && oracle(primary).includes("choose a background"); if(!wants) return null; const q=["legal:commander","type:background","game:paper", identityToQuery(getCI(primary)||"wubrg")].join(" "); for(let i=0;i<10;i++){ const c=await sfRandom(q); if(!isCommanderLegal(c)) continue; return c; } return null; };
+  const fetchPool=async(ci)=>{ const base=`legal:commander game:paper ${identityToQuery(ci)} -is:funny`; const mech = mechanics.length ? ` (${mechanics.map(k=>{ const tag=MECHANIC_TAGS.find(m=>m.key===k); if(!tag) return ""; const parts=tag.matchers.map(m=>`o:\"${m}\"`).join(" or "); return `(${parts})`; }).join(" or ")})` : ""; const spellsQ=`${base} -type:land -type:background${mech}`; const landsQ =`${base} type:land -type:basic`; const gather=async(q,b,pages=2)=>{ let page=await sfSearch(q,{unique:"cards", order:"random"}); b.push(...page.data); for(let i=1;i<pages && page.has_more;i++){ await sleep(100); page=await fetch(page.next_page).then(r=>r.json()); b.push(...page.data);} }; const spells=[], lands=[]; await gather(spellsQ,spells,2); await gather(landsQ,lands,1); return { spells:distinctByName(spells).filter(isCommanderLegal), lands:distinctByName(lands).filter(isCommanderLegal) }; };
   async function buildLandCards(landsMap){ const out=[]; for(const [n,q] of Object.entries(landsMap)){ try{ const b=await bundleByName(n); out.push({...b, qty:q}); } catch { out.push({ name:n, qty:q, image:"", small:"", oracle_en:"", mana_cost:"", cmc:0, prices:{}, scryfall_uri:"" }); } await sleep(60);} return out; }
   const generate=async()=>{ setError(""); setLoading(true); setDeck(null); try{
       const primary = await pickCommander(commanderMode==='random'? desiredCI : getCI(selectedCommanderCard));
@@ -305,7 +306,7 @@ export default function App(){
   const clearCollection=()=>{ setOwnedMap(new Map()); setUploadedFiles([]); };
 
   // Rebalance
-  const reequilibrer=async()=>{ if(!deck) return; try{ setLoading(true); const ci=deck.colorIdentity; const base=`legal:commander game:paper ${identityToQuery(ci)} -is:funny -type:land -type:background`; let page=await sf.search(base,{unique:"cards", order:"edhrec"}); let pool=page.data; if(page.has_more){ const next=await fetch(page.next_page).then(r=>r.json()); pool=pool.concat(next.data||[]);} pool=distinctByName(pool).filter(isCommanderLegal); const currentNames=new Set(Object.keys(deck.nonlands)); const currentObjs=pool.filter(c=> currentNames.has(nameOf(c))); const others=pool.filter(c=> !currentNames.has(nameOf(c))); const totalBudget=deck.budget||0; let spent=0; const balanced=balanceSpells(currentObjs, others, totalBudget, spent); const newNonlands=Object.fromEntries(balanced.picks.map(c=>[nameOf(c),1])); const newNonlandCards=balanced.picks.map(bundleCard); setDeck(prev=>({...prev, nonlands:newNonlands, nonlandCards:newNonlandCards, balanceCounts:balanced.counts, balanceTargets:targets })); } finally { setLoading(false); } };
+  const reequilibrer=async()=>{ if(!deck) return; try{ setLoading(true); const ci=deck.colorIdentity; const base=`legal:commander game:paper ${identityToQuery(ci)} -is:funny -type:land -type:background`; let page=await sfSearch(base,{unique:"cards", order:"edhrec"}); let pool=page.data; if(page.has_more){ const next=await fetch(page.next_page).then(r=>r.json()); pool=pool.concat(next.data||[]);} pool=distinctByName(pool).filter(isCommanderLegal); const currentNames=new Set(Object.keys(deck.nonlands)); const currentObjs=pool.filter(c=> currentNames.has(nameOf(c))); const others=pool.filter(c=> !currentNames.has(nameOf(c))); const totalBudget=deck.budget||0; let spent=0; const balanced=balanceSpells(currentObjs, others, totalBudget, spent); const newNonlands=Object.fromEntries(balanced.picks.map(c=>[nameOf(c),1])); const newNonlandCards=balanced.picks.map(bundleCard); setDeck(prev=>({...prev, nonlands:newNonlands, nonlandCards:newNonlandCards, balanceCounts:balanced.counts, balanceTargets:targets })); } finally { setLoading(false); } };
 
   const deckSize = useMemo(()=>{ if(!deck) return 0; const cmd=deck.commanders?.length||0; const nl=Object.values(deck?.nonlands||{}).reduce((a,b)=>a+b,0); const ld=Object.values(deck?.lands||{}).reduce((a,b)=>a+b,0); return cmd+nl+ld; },[deck]);
 
@@ -675,17 +676,17 @@ export default function App(){
 
 /*************** Resolve name FR/EN ***************/
 async function resolveCommanderByAnyName(name){
-  try { const en = await sf.namedExact(name); if(isCommanderLegal(en)) return en; } catch {}
+  try { const en = await bundleByName(name); if(isCommanderLegal(en)) return en; } catch {}
   const term = `legal:commander name:\"${name}\" (type:legendary or o:\"can be your commander\")`;
-  const fr = await sf.search(`${term} lang:fr unique:prints order:released`).catch(()=>null);
+  const fr = await sfSearch(`${term} lang:fr unique:prints order:released`).catch(()=>null);
   const any = fr?.data?.[0];
   if(any){
     const oid = any.oracle_id;
-    const enOfSame = await sf.search(`oracleid:${oid} lang:en order:released unique:prints`).catch(()=>null);
+    const enOfSame = await sfSearch(`oracleid:${oid} lang:en order:released unique:prints`).catch(()=>null);
     const best = enOfSame?.data?.[0] || any;
     if(isCommanderLegal(best)) return best;
   }
-  const gen = await sf.search(`legal:commander name:${name} (type:legendary or o:\"can be your commander\") order:edhrec`).catch(()=>null);
+  const gen = await sfSearch(`legal:commander name:${name} (type:legendary or o:\"can be your commander\") order:edhrec`).catch(()=>null);
   const pick = gen?.data?.find(isCommanderLegal) || gen?.data?.[0];
   if(pick) return pick;
   throw new Error(`Impossible de résoudre le nom: ${name}`);
