@@ -23,11 +23,54 @@ const MECH_KEYWORDS = {
   reanimation: ["return target creature card from your graveyard", "reanimate", "return from your graveyard"],
 };
 
-/**
- * Génère un deck Commander.
- * @param {Object} opts
- * @returns {Promise<{ deck:{ commander:any, nonlands:any[], lands:any[] }, counts:any }>}
- */
+// ---------- Helpers pool ----------
+
+// récupère plusieurs pages pour grossir le pool
+async function fetchAllPages(q, { pages = 1, unique = "cards", order = "edhrec" } = {}) {
+  let res = await sfSearch(`${q} unique:${unique} order:${order}`);
+  let out = Array.isArray(res?.data) ? res.data.slice() : [];
+  let left = pages - 1;
+  while (left > 0 && res?.has_more && res?.next_page) {
+    const r = await fetch(res.next_page);
+    if (!r.ok) break;
+    res = await r.json();
+    out = out.concat(res?.data || []);
+    left--;
+  }
+  return out;
+}
+
+// score synergie mécaniques
+function synergyBonus(card, mechSet) {
+  if (!mechSet.size) return 0;
+  const t = (card.oracle_text || "").toLowerCase();
+  let hits = 0;
+  for (const mech of mechSet) {
+    const list = MECH_KEYWORDS[mech] || [];
+    for (const kw of list) {
+      if (t.includes(kw)) { hits++; break; }
+    }
+  }
+  return Math.min(0.4, hits * 0.1); // 0..0.4
+}
+
+// score global
+function scorer({ edhrecWeight, ownedWeight, deckBudget, ownedMap, mechSet }) {
+  return (c) => {
+    const edhRank = Number(c.edhrec_rank || 100000);
+    const edh = 1 - Math.min(100000, edhRank) / 100000; // 0..1
+    const have = ownedMap.get((c.name || "").toLowerCase()) > 0 ? 1 : 0; // 0/1
+    const price = priceEUR(c);
+    const budgetOk = deckBudget <= 0 ? 1 : price <= deckBudget ? 1 : 0.3;
+    const syn = synergyBonus(c, mechSet); // 0..0.4
+    return (edhrecWeight / 100) * edh + (ownedWeight / 100) * have + 0.2 * budgetOk + syn;
+  };
+}
+
+// bucket courbe
+const curveBucket = (cmc) => (cmc <= 2 ? "low" : cmc <= 4 ? "mid" : "high");
+
+// ---------- MAIN ----------
 export async function generate(opts) {
   const {
     commanderMode = "select",
@@ -36,12 +79,16 @@ export async function generate(opts) {
     mechanics = [],
     edhrecWeight = 60,
     ownedWeight = 40,
-    deckBudget = 200,
+    deckBudget = 0,
     targetLands = 36,
     targets = { ramp: [8, 12], draw: [6, 10], removal: [6, 10], wraths: [2, 4] },
     ownedMap = new Map(),
     progress = () => {},
   } = opts || {};
+
+  // 0) Préparation
+  const mechSet = new Set((mechanics || []).map((m) => String(m || "").toLowerCase()));
+  const scoreOf = scorer({ edhrecWeight, ownedWeight, deckBudget, ownedMap, mechSet });
 
   progress(5, "Recherche du commandant…");
 
@@ -50,7 +97,6 @@ export async function generate(opts) {
   if (commanderMode === "select" && chosenCommander) {
     commanderCard = await sfNamedExact(chosenCommander);
   } else {
-    // Filtres qualité pool
     let q = `legal:commander game:paper -is:funny (type:"legendary creature" or (type:planeswalker and o:"can be your commander") or type:background)`;
     if (desiredCI && desiredCI.length > 0) q += ` ${identityToQuery(desiredCI)}`;
     commanderCard = await sfRandom(q);
@@ -58,41 +104,33 @@ export async function generate(opts) {
   if (!commanderCard || !isCommanderLegal(commanderCard)) {
     throw new Error("Aucun commandant valide trouvé.");
   }
+
   const commanderCI = getCI(commanderCard);
 
-  // 2) Pool non-terrains
+  // 2) Construire les pools
   progress(20, "Création du pool de cartes…");
-  const baseFilter = identityToQuery(commanderCI); // "" si incolore
-  const baseQ = `-type:land legal:commander game:paper -is:funny ${baseFilter}`.trim();
-  const res = await sfSearch(`${baseQ} order:edhrec unique:prints`);
-  const poolRaw = (res?.data || []).filter(isCommanderLegal);
+  const filterCI = identityToQuery(commanderCI);
+  const base = `legal:commander game:paper -is:funny ${filterCI}`.trim();
 
-  // 3) Scoring & synergie
-  progress(35, "Filtrage par poids et mécaniques…");
-  const mechSet = new Set((mechanics || []).map((m) => String(m || "").toLowerCase()));
-  const synergyBonus = (c) => {
-    if (!mechSet.size) return 0;
-    const t = (c.oracle_text || "").toLowerCase();
-    let hits = 0;
-    for (const mech of mechSet) {
-      const list = MECH_KEYWORDS[mech] || [];
-      for (const kw of list) { if (t.includes(kw)) { hits++; break; } }
-    }
-    return Math.min(0.4, hits * 0.1);
-  };
-  const scoreOf = (c) => {
-    const edhRank = Number(c.edhrec_rank || 100000);
-    const edh = 1 - Math.min(100000, edhRank) / 100000;
-    const have = ownedMap.get((c.name || "").toLowerCase()) > 0 ? 1 : 0;
-    const price = priceEUR(c);
-    const budgetOk = deckBudget <= 0 ? 1 : price <= deckBudget ? 1 : 0.3;
-    const syn = synergyBonus(c);
-    return (edhrecWeight / 100) * edh + (ownedWeight / 100) * have + 0.2 * budgetOk + syn;
-  };
-  const pool = poolRaw.sort((a, b) => scoreOf(b) - scoreOf(a));
+  // sorts non-terrains (2 pages), lands non-basics (1 page) si besoin
+  const spellsQ = `${base} -type:land -type:background`;
+  const landsQ  = `${base} type:land -type:basic`;
 
-  // 4) Équilibrage par rôles + courbe
-  progress(55, "Équilibrage ramp/draw/removal/wraths…");
+  const [spellsPoolRaw, landsPoolRaw] = await Promise.all([
+    fetchAllPages(spellsQ, { pages: 2, unique: "cards", order: "edhrec" }),
+    fetchAllPages(landsQ,  { pages: 1, unique: "cards", order: "edhrec" }),
+  ]);
+
+  // filtrage légalité + tri score
+  const spellsPool = (spellsPoolRaw || []).filter(isCommanderLegal).sort((a, b) => scoreOf(b) - scoreOf(a));
+  const landsPool  = (landsPoolRaw  || []).filter(isCommanderLegal).sort((a, b) => scoreOf(b) - scoreOf(a));
+
+  // 3) Nombre de terrains et de sorts visés
+  const TL = clamp(Number(targetLands) || 36, 32, 40);     // terrains visés (bornés)
+  const spellsTarget = 99 - TL;                            // sorts non-terrains visés
+
+  // 4) Sélection des sorts : minima par rôle + courbe + singleton strict
+  progress(45, "Sélection des sorts…");
   const want = {
     ramp: targets.ramp?.[0] ?? 8,
     draw: targets.draw?.[0] ?? 6,
@@ -103,87 +141,119 @@ export async function generate(opts) {
 
   const curveTarget = { low: 12, mid: 10, high: 8 };
   const curveHave = { low: 0, mid: 0, high: 0 };
-  const curveBucket = (cmc) => (cmc <= 2 ? "low" : cmc <= 4 ? "mid" : "high");
 
   const pick = [];
-  const seen = new Set();
-  const keyOf = (c) => (c.name || "") + ":" + (c.mana_cost || "");
+  const takenNames = new Set(); // SINGLETON STRICT par nom
+  const nameOf = (c) => (c?.name || "").trim();
 
-  // Minima par rôle
-  for (const c of pool) {
-    if (pick.length >= 30) break;
+  // 4.1 Minima par rôle
+  for (const c of spellsPool) {
+    if (pick.length >= spellsTarget) break;
     const r = roleOf(c);
     if (r !== "other" && have[r] < want[r]) {
-      const k = keyOf(c);
-      if (seen.has(k)) continue;
+      const n = nameOf(c);
+      if (!n || takenNames.has(n)) continue;
+
+      // Budget hard pour minima (éviter outliers)
       const price = priceEUR(c);
       if (deckBudget > 0 && price > deckBudget * 2) continue;
-      pick.push(c); seen.add(k); have[r]++;
-      const b = curveBucket(Number(c.cmc) || 0); curveHave[b] = (curveHave[b] || 0) + 1;
+
+      pick.push(c);
+      takenNames.add(n);
+      have[r]++;
+
+      const b = curveBucket(Number(c.cmc) || 0);
+      curveHave[b] = (curveHave[b] || 0) + 1;
     }
   }
-  // Complément avec préférence courbe
-  for (const c of pool) {
-    if (pick.length >= 30) break;
-    const k = keyOf(c);
-    if (seen.has(k)) continue;
+
+  // 4.2 Compléter jusqu’à spellsTarget (préférence courbe + léger budget)
+  for (const c of spellsPool) {
+    if (pick.length >= spellsTarget) break;
+    const n = nameOf(c);
+    if (!n || takenNames.has(n)) continue;
+
     const price = priceEUR(c);
     if (deckBudget > 0 && price > deckBudget * 1.5) continue;
+
     const b = curveBucket(Number(c.cmc) || 0);
     if (curveHave[b] >= curveTarget[b]) {
       if ((curveHave.low < curveTarget.low) || (curveHave.mid < curveTarget.mid) || (curveHave.high < curveTarget.high)) {
-        continue;
+        continue; // combler d’abord les buckets en retard
       }
     }
-    pick.push(c); seen.add(k); curveHave[b] = (curveHave[b] || 0) + 1;
+
+    pick.push(c);
+    takenNames.add(n);
+    curveHave[b] = (curveHave[b] || 0) + 1;
   }
 
-  // 5) Bundle + stats
-  progress(72, "Mise en forme et statistiques…");
-  const nonlands = pick.map(bundleCard);
-  const counts = { ramp: 0, draw: 0, removal: 0, wraths: 0 };
-  for (const c of nonlands) { const r = roleOf(c); if (counts[r] != null) counts[r] += 1; }
-
-  // 6) Manabase exacte (terrains)
-  progress(85, "Construction de la base de terrains…");
-  // 🔒 CLAMP fort ici — impossible d’avoir 94 terrains si on borne à [32..40].
-  const TL = clamp(Number(targetLands) || 36, 32, 40);
-  const lands = await buildManabase(commanderCI, TL, Number(deckBudget) || 0); // retourne exactement TL lands
-
-  // 7) Ajuster à 99: on complète *uniquement* en sorts
-  let nonlandsFinal = [...nonlands];
-  const landsFinal = [...lands];
-  const desiredNonlands = Math.max(0, 99 - landsFinal.length);
-
-  if (nonlandsFinal.length < desiredNonlands) {
-    const alreadyPicked = new Set(nonlandsFinal.map(c => (c.name || "") + ":" + (c.mana_cost || "")));
-    const remainder = [];
-    for (const c of pool) {
-      const k = (c.name || "") + ":" + (c.mana_cost || "");
-      if (alreadyPicked.has(k)) continue;
+  // 4.3 Top-up si, malgré tout, il manque encore des sorts (budget doux + low→mid→high)
+  while (pick.length < spellsTarget) {
+    const remainder = spellsPool.filter((c) => {
+      const n = nameOf(c);
+      if (!n || takenNames.has(n)) return false;
       const price = priceEUR(c);
-      if (deckBudget > 0 && price > deckBudget * 1.2) continue;
-      remainder.push(c);
-    }
-    const low  = remainder.filter(c => (Number(c.cmc) || 0) <= 2);
-    const mid  = remainder.filter(c => (Number(c.cmc) || 0) >= 3 && (Number(c.cmc) || 0) <= 4);
-    const high = remainder.filter(c => (Number(c.cmc) || 0) >= 5);
+      if (deckBudget > 0 && price > deckBudget * 1.2) return false;
+      return true;
+    });
+    if (!remainder.length) break;
+
+    const low  = remainder.filter((c) => (Number(c.cmc) || 0) <= 2);
+    const mid  = remainder.filter((c) => (Number(c.cmc) || 0) >= 3 && (Number(c.cmc) || 0) <= 4);
+    const high = remainder.filter((c) => (Number(c.cmc) || 0) >= 5);
     const prioritized = [...low, ...mid, ...high];
 
     for (const c of prioritized) {
-      if (nonlandsFinal.length >= desiredNonlands) break;
-      const k = (c.name || "") + ":" + (c.mana_cost || "");
-      if (alreadyPicked.has(k)) continue;
+      if (pick.length >= spellsTarget) break;
+      const n = nameOf(c);
+      if (!n || takenNames.has(n)) continue;
+      pick.push(c);
+      takenNames.add(n);
+    }
+    if (prioritized.length === 0) break;
+  }
+
+  // 5) Mise en forme des sorts + compteurs
+  progress(65, "Mise en forme des sorts…");
+  const nonlands = pick.map(bundleCard);
+  const counts = { ramp: 0, draw: 0, removal: 0, wraths: 0 };
+  for (const c of nonlands) {
+    const r = roleOf(c);
+    if (counts[r] != null) counts[r] += 1;
+  }
+
+  // 6) Manabase EXACTE (terrains) — buildManabase retourne exactement TL lands (≤8 non-basiques)
+  progress(80, "Construction de la base de terrains…");
+  const lands = await buildManabase(commanderCI, TL, Number(deckBudget) || 0);
+
+  // 7) Validation finale: 1 commandant + (nonlands + lands) == 99
+  progress(95, "Validation du deck…");
+  let nonlandsFinal = [...nonlands];
+  const landsFinal = [...lands];
+
+  // Si, pour une raison quelconque, on est en dessous, on tente un dernier top-up en sorts (singleton)
+  if (nonlandsFinal.length < spellsTarget) {
+    const rest = spellsPool.filter((c) => !takenNames.has(nameOf(c)));
+    for (const c of rest) {
+      if (nonlandsFinal.length >= spellsTarget) break;
+      const n = nameOf(c);
+      if (!n || takenNames.has(n)) continue;
       nonlandsFinal.push(bundleCard(c));
-      alreadyPicked.add(k);
+      takenNames.add(n);
     }
   }
 
   // 8) Done
   progress(100, "Terminé !");
-  await sleep(100);
+  await sleep(60);
+
   return {
-    deck: { commander: bundleCard(commanderCard), nonlands: nonlandsFinal, lands: landsFinal },
+    deck: {
+      commander: bundleCard(commanderCard),
+      nonlands: nonlandsFinal,
+      lands: landsFinal,
+    },
     counts,
   };
 }
