@@ -12,6 +12,16 @@ import { buildManabase } from "./manabase";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// --- Lexique simple: mécanique -> mots à chercher dans oracle_text
+const MECH_KEYWORDS = {
+  blink: ["flicker", "exile target creature then return", "flickered", "enters the battlefield"],
+  treasure: ["treasure", "create a treasure"],
+  sacrifice: ["sacrifice ", "sacrifice a"],
+  lifegain: ["you gain", "lifelink", "gain life"],
+  tokens: ["create a 1/1", "create a token", "create x"],
+  reanimation: ["return target creature card from your graveyard", "reanimate", "return from your graveyard"],
+};
+
 /**
  * Génère un deck Commander.
  * @param {Object} opts
@@ -70,9 +80,28 @@ export async function generate(opts) {
   const res = await sfSearch(`${baseQ} order:edhrec unique:prints`);
   const poolRaw = (res?.data || []).filter(isCommanderLegal);
 
-  // 3) Scoring et filtrage (EDHREC / Owned / Budget / Mécaniques)
+  // 3) Scoring et synergie (EDHREC / Owned / Budget / Mécaniques)
   progress(35, "Filtrage par poids et mécaniques…");
   const mechSet = new Set((mechanics || []).map((m) => String(m || "").toLowerCase()));
+
+  function passMechanics(_c) {
+    // On ne filtre pas dur pour ne pas rater des cartes utiles : on score avec synergyBonus.
+    return true;
+  }
+
+  // Bonus de synergie (0..0.4)
+  function synergyBonus(c) {
+    if (!mechSet.size) return 0;
+    const t = (c.oracle_text || "").toLowerCase();
+    let hits = 0;
+    for (const mech of mechSet) {
+      const list = MECH_KEYWORDS[mech] || [];
+      for (const kw of list) {
+        if (t.includes(kw)) { hits++; break; }
+      }
+    }
+    return Math.min(0.4, hits * 0.1);
+  }
 
   function scoreOf(c) {
     const edhRank = Number(c.edhrec_rank || 100000);
@@ -80,19 +109,13 @@ export async function generate(opts) {
     const have = ownedMap.get((c.name || "").toLowerCase()) > 0 ? 1 : 0; // 0/1
     const price = priceEUR(c);
     const budgetOk = deckBudget <= 0 ? 1 : price <= deckBudget ? 1 : 0.3;
-    return (edhrecWeight / 100) * edh + (ownedWeight / 100) * have + 0.2 * budgetOk;
-  }
-
-  function passMechanics(c) {
-    if (!mechSet.size) return true;
-    const t = (c.oracle_text || "").toLowerCase();
-    for (const m of mechSet) if (t.includes(m)) return true;
-    return false;
+    const syn = synergyBonus(c); // 0..0.4
+    return (edhrecWeight / 100) * edh + (ownedWeight / 100) * have + 0.2 * budgetOk + syn;
   }
 
   const pool = poolRaw.filter(passMechanics).sort((a, b) => scoreOf(b) - scoreOf(a));
 
-  // 4) Équilibrage par rôles → atteindre minima, puis compléter
+  // 4) Équilibrage par rôles + courbe de mana
   progress(55, "Équilibrage ramp/draw/removal/wraths…");
 
   const want = {
@@ -102,35 +125,61 @@ export async function generate(opts) {
     wraths: targets.wraths?.[0] ?? 2,
   };
   const have = { ramp: 0, draw: 0, removal: 0, wraths: 0 };
+
+  // --- Cible de courbe ---
+  const curveTarget = { low: 12, mid: 10, high: 8 };
+  const curveHave = { low: 0, mid: 0, high: 0 };
+  function curveBucket(cmc) {
+    if (cmc <= 2) return "low";
+    if (cmc <= 4) return "mid";
+    return "high";
+  }
+
   const pick = [];
   const seen = new Set();
   const keyOf = (c) => (c.name || "") + ":" + (c.mana_cost || "");
 
-  // 4.1 Satisfaire les minima
+  // 4.1 Satisfaire les minima rôle par rôle
   for (const c of pool) {
     if (pick.length >= 30) break;
     const r = roleOf(c);
     if (r !== "other" && have[r] < want[r]) {
       const k = keyOf(c);
       if (seen.has(k)) continue;
-      // Filtre budget strict pour éviter les outliers très chers
+
+      // Budget guard strict pour les minima (éviter outliers)
       const price = priceEUR(c);
       if (deckBudget > 0 && price > deckBudget * 2) continue;
+
       pick.push(c);
       seen.add(k);
       have[r]++;
+
+      const b = curveBucket(Number(c.cmc) || 0);
+      curveHave[b] = (curveHave[b] || 0) + 1;
     }
   }
 
-  // 4.2 Compléter jusqu'à 30
+  // 4.2 Compléter jusqu'à 30 avec préférence pour combler la courbe
   for (const c of pool) {
     if (pick.length >= 30) break;
     const k = keyOf(c);
     if (seen.has(k)) continue;
+
     const price = priceEUR(c);
     if (deckBudget > 0 && price > deckBudget * 1.5) continue;
+
+    const b = curveBucket(Number(c.cmc) || 0);
+    // Si ce bucket est déjà au-dessus de sa cible ET qu'un autre est en retard, on préfère l'autre
+    if (curveHave[b] >= curveTarget[b]) {
+      if ((curveHave.low < curveTarget.low) || (curveHave.mid < curveTarget.mid) || (curveHave.high < curveTarget.high)) {
+        continue;
+      }
+    }
+
     pick.push(c);
     seen.add(k);
+    curveHave[b] = (curveHave[b] || 0) + 1;
   }
 
   // 5) Bundle + compteurs d’indicateurs
