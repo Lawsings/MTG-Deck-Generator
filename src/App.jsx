@@ -171,7 +171,13 @@ export default function App() {
       let commander = selectedCommanderCard;
       if (commanderMode === "random" || !commander) {
         stepProgress(10, "Choix du commandant…");
-        const q = `legal:commander (type:\\\"legendary creature\\\" or (type:planeswalker and o:\\\"can be your commander\\\") or type:background) ${identityToQuery(desiredCI)}`;
+
+        // ✅ Construire la requête sans filtre de couleurs si desiredCI est vide
+        let q = `legal:commander (type:\\\"legendary creature\\\" or (type:planeswalker and o:\\\"can be your commander\\\") or type:background)`;
+        if (desiredCI && desiredCI.length > 0) {
+          q += ` ${identityToQuery(desiredCI)}`;
+        }
+
         const rnd = await sfRandom(q);
         commander = rnd;
         setChosenCommander(rnd?.name || "");
