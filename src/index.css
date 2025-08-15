@@ -67,4 +67,17 @@
 
   .dropzone {
     @apply relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition;
-    border-color: va
+    border-color: var(--border);
+    background: var(--bg2);
+  }
+  .dropzone.drag { @apply ring-2; }
+
+  .glass-strong {
+    @apply rounded-lg border;
+    border-color: var(--border);
+    background: color-mix(in srgb, var(--bg1) 70%, transparent);
+    backdrop-filter: blur(8px);
+  }
+
+  .muted { @apply opacity-70; }
+}
