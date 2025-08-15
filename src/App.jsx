@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
-// UI (passes 1→5)
+// UI (passes 1→7)
 import ThemeToggle from "./components/controls/ThemeToggle";
 import ManaCost from "./components/cards/ManaCost";
 import CardModal from "./components/cards/CardModal";
@@ -12,6 +12,7 @@ import Sliders from "./components/controls/Sliders";
 import TargetsEditor from "./components/controls/TargetsEditor";
 import GenerateButton from "./components/controls/GenerateButton";
 import LoadingModal from "./components/misc/LoadingModal";
+import Toast from "./components/misc/Toast";
 
 // Résultats (Passe 5)
 import CommanderBlock from "./components/result/CommanderBlock";
@@ -32,17 +33,20 @@ import {
   getCI,
   priceEUR,
   bundleCard,
-  roleOf,                // ← ajouté depuis utils/cards.js
+  roleOf,
 } from "./utils/cards";
 
 // Terrains
 import { suggestBasicLands } from "./utils/lands";
 
-// API Scryfall
+// API Scryfall (déjà avec cache+retry via fetcher.js)
 import { search as sfSearch, random as sfRandom } from "./api/scryfall";
 
 // Collection utils
 import { parseCollectionFile } from "./utils/collection";
+
+// Storage (persistance locale)
+import { saveState, loadState } from "./utils/storage";
 
 // =========================
 // Constantes légères
@@ -81,27 +85,30 @@ function download(filename, text){
 }
 
 export default function App() {
+  // Boot state (persistance)
+  const boot = loadState();
+
   // Thème
-  const [theme, setTheme] = useState(() => (typeof localStorage !== "undefined" ? localStorage.getItem("theme") || "dark" : "dark"));
+  const [theme, setTheme] = useState(() => boot.theme ?? "dark");
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     try { localStorage.setItem("theme", theme); } catch {}
   }, [theme]);
 
   // États principaux
-  const [commanderMode, setCommanderMode] = useState("select"); // "select" | "random"
-  const [chosenCommander, setChosenCommander] = useState("");
-  const [desiredCI, setDesiredCI] = useState("");
-  const [mechanics, setMechanics] = useState([]);
+  const [commanderMode, setCommanderMode] = useState(boot.commanderMode ?? "select"); // "select" | "random"
+  const [chosenCommander, setChosenCommander] = useState(boot.chosenCommander ?? "");
+  const [desiredCI, setDesiredCI] = useState(boot.desiredCI ?? "");
+  const [mechanics, setMechanics] = useState(boot.mechanics ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   // Sliders / options
-  const [edhrecWeight, setEdhrecWeight] = useState(60);
-  const [ownedWeight, setOwnedWeight] = useState(40);
-  const [deckBudget, setDeckBudget] = useState(200);
-  const [targetLands, setTargetLands] = useState(36);
-  const [targets, setTargets] = useState({ ramp: [8, 12], draw: [6, 10], removal: [6, 10], wraths: [2, 4] });
+  const [edhrecWeight, setEdhrecWeight] = useState(boot.edhrecWeight ?? 60);
+  const [ownedWeight, setOwnedWeight] = useState(boot.ownedWeight ?? 40);
+  const [deckBudget, setDeckBudget] = useState(boot.deckBudget ?? 200);
+  const [targetLands, setTargetLands] = useState(boot.targetLands ?? 36);
+  const [targets, setTargets] = useState(boot.targets ?? { ramp: [8, 12], draw: [6, 10], removal: [6, 10], wraths: [2, 4] });
 
   // Progress (modale)
   const [progress, setProgress] = useState(0);
@@ -119,6 +126,10 @@ export default function App() {
   const [openModal, setOpenModal] = useState(false);
   const [modalCard, setModalCard] = useState(null);
 
+  // Toast
+  const [toast, setToast] = useState({ open:false, msg:"" });
+  function notifyError(msg){ setError(msg); setToast({ open:true, msg }); }
+
   // Résolution du commandant
   const selectedCommanderCard = useCommanderResolution(
     commanderMode,
@@ -129,6 +140,15 @@ export default function App() {
 
   // Ref pour scroll vers le bloc commandant
   const commanderRef = useRef(null);
+
+  // ===== Persistance automatique des réglages =====
+  useEffect(()=> saveState({ theme }), [theme]);
+  useEffect(()=> saveState({ commanderMode }), [commanderMode]);
+  useEffect(()=> saveState({ chosenCommander }), [chosenCommander]);
+  useEffect(()=> saveState({ desiredCI }), [desiredCI]);
+  useEffect(()=> saveState({ mechanics }), [mechanics]);
+  useEffect(()=> saveState({ edhrecWeight, ownedWeight, deckBudget, targetLands, targets }),
+    [edhrecWeight, ownedWeight, deckBudget, targetLands, targets]);
 
   // ===== Collection handlers =====
   async function handleCollectionFiles(files) {
@@ -257,7 +277,7 @@ export default function App() {
       endProgress();
     } catch (e) {
       console.error(e);
-      setError(String(e.message || e));
+      notifyError(String(e.message || e));
     } finally {
       await sleep(300);
       setLoading(false);
@@ -419,9 +439,10 @@ export default function App() {
         )}
       </section>
 
-      {/* Modales */}
+      {/* Modales & Toast */}
       <CardModal open={openModal} card={modalCard} owned={false} onClose={() => setOpenModal(false)} />
       <LoadingModal open={loading} progress={progress} message={progressMsg} />
+      <Toast open={toast.open} message={toast.msg} onClose={()=> setToast({ open:false, msg:"" })} />
     </div>
   );
 }
