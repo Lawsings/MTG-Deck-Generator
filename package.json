@@ -9,9 +9,9 @@
     "preview": "vite preview --port 5173"
   },
   "dependencies": {
-    "react": "^18.x",
-    "react-dom": "^18.x",
-    "lucide-react": "^0.x.x"
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "lucide-react": "^0.453.0"   // ou une version récente
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
