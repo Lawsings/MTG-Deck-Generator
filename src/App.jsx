@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
-// UI (passes 1→8)
+// UI
 import ThemeToggle from "./components/controls/ThemeToggle";
 import ManaCost from "./components/cards/ManaCost";
 import CardModal from "./components/cards/CardModal";
@@ -26,9 +26,9 @@ import { RefreshCcw } from "lucide-react";
 // Hooks
 import useCommanderResolution from "./hooks/useCommanderResolution";
 
-// Utils cartes
+// Utils cartes (pour affichage / prix)
 import {
-  identityToQuery,   // ← utilise maintenant id<=...
+  identityToQuery,   // utilisé par App pour afficher/filtrer dans l’UI si besoin
   isCommanderLegal,
   getCI,
   priceEUR,
@@ -36,23 +36,15 @@ import {
   roleOf,
 } from "./utils/cards";
 
-// Manabase (staples + basiques)
-import { buildManabase } from "./utils/manabase";
-
-// API Scryfall (avec cache/retry via fetcher)
-import { search as sfSearch, random as sfRandom } from "./api/scryfall";
-
-// Collection utils
-import { parseCollectionFile } from "./utils/collection";
+// Exports (TXT / CSV Moxfield / CSV Archidekt)
+import { toText, toMoxfieldCSV, toArchidektCSV, downloadFile } from "./utils/exports";
 
 // Storage (persistance locale)
 import { saveState, loadState } from "./utils/storage";
 
-// Exports (TXT / CSV Moxfield / CSV Archidekt)
-import { toText, toMoxfieldCSV, toArchidektCSV, downloadFile } from "./utils/exports";
+// Génération externalisée
+import { generate as buildDeck } from "./utils/deckBuilder";
 
-// =========================
-// Constantes
 // =========================
 const MECHANIC_TAGS = ["blink", "treasure", "sacrifice", "lifegain", "tokens", "reanimation"];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -103,7 +95,7 @@ export default function App() {
   const [toast, setToast] = useState({ open:false, msg:"" });
   function notifyError(msg){ setError(msg); setToast({ open:true, msg }); }
 
-  // Résolution du commandant
+  // Résolution du commandant (pour mode "select")
   const selectedCommanderCard = useCommanderResolution(
     commanderMode,
     chosenCommander,
@@ -157,102 +149,35 @@ export default function App() {
     setOwnedMap(new Map());
   }
 
-  // ===== Progress helpers =====
-  function startProgress() { setProgress(0); setProgressMsg("Initialisation…"); }
-  function stepProgress(p, m) { setProgress(Math.max(0, Math.min(100, p))); if (m) setProgressMsg(m); }
-  function endProgress() { setProgress(100); setProgressMsg("Finalisation…"); }
-
-  // ===== Génération =====
+  // ===== Génération (via deckBuilder.generate) =====
   async function generateDeck() {
     setError("");
     setLoading(true);
-    startProgress();
+    setProgress(0);
+    setProgressMsg("Initialisation…");
+
     try {
-      let commander = selectedCommanderCard;
-      if (commanderMode === "random" || !commander) {
-        stepProgress(10, "Choix du commandant…");
+      const { deck: built, counts } = await buildDeck({
+        commanderMode,
+        chosenCommander,
+        desiredCI,
+        mechanics,
+        edhrecWeight,
+        ownedWeight,
+        deckBudget,
+        targetLands,
+        targets,
+        ownedMap,
+        progress: (p, msg) => { setProgress(p); if (msg) setProgressMsg(msg); }
+      });
 
-        // ✅ Construire la requête SANS filtre si desiredCI est vide
-        let q = `legal:commander (type:\\\"legendary creature\\\" or (type:planeswalker and o:\\\"can be your commander\\\") or type:background)`;
-        if (desiredCI && desiredCI.length > 0) {
-          q += ` ${identityToQuery(desiredCI)}`; // ← id<=WUBRG (corrigé)
-        }
-
-        const rnd = await sfRandom(q);
-        commander = rnd;
-        setChosenCommander(rnd?.name || "");
-        setDesiredCI(getCI(rnd));
-      }
-
-      stepProgress(30, "Recherche du pool de cartes…");
-      const commanderCI = getCI(commander); // ex: "WRG"
-      const baseFilter = identityToQuery(commanderCI); // "" si vide, sinon id<=WRG
-      const baseQ = `-type:land legal:commander ${baseFilter}`.trim();
-      const res = await sfSearch(`${baseQ} order:edhrec unique:prints`);
-      const poolRaw = (res?.data || []).filter(isCommanderLegal);
-
-      // Scoring (EDHREC / Owned / Budget)
-      const owned = ownedMap || new Map();
-      function scoreOf(c) {
-        const edh = 1 - Math.min(100000, Number(c.edhrec_rank || 100000)) / 100000; // 0..1
-        const have = owned.get((c.name || "").toLowerCase()) > 0 ? 1 : 0;            // 0/1
-        const price = Number(c?.prices?.eur) || Number(c?.prices?.eur_foil) || 0;
-        const budgetOk = deckBudget <= 0 ? 1 : (price <= deckBudget ? 1 : 0.3);
-        return (edhrecWeight/100)*edh + (ownedWeight/100)*have + 0.2*budgetOk;
-      }
-
-      stepProgress(45, "Tri du pool…");
-      const pool = [...poolRaw].sort((a,b)=> scoreOf(b)-scoreOf(a));
-
-      // Équilibrage par rôles (atteindre minima)
-      const want = { ramp:targets.ramp[0], draw:targets.draw[0], removal:targets.removal[0], wraths:targets.wraths[0] };
-      const have = { ramp:0, draw:0, removal:0, wraths:0 };
-
-      const pick = [];
-      const seen = new Set();
-      const keyOf = (c) => (c.name||"")+":"+(c.mana_cost||"");
-
-      stepProgress(60, "Équilibrage vers les cibles…");
-      for (const c of pool) {
-        if (pick.length >= 30) break;
-        const r = roleOf(c);
-        if (r !== "other" && have[r] < want[r]) {
-          const k = keyOf(c);
-          if (seen.has(k)) continue;
-          pick.push(c); seen.add(k); have[r]++;
-        }
-      }
-
-      // Compléter jusqu'à 30
-      stepProgress(72, "Complément de sélection…");
-      for (const c of pool) {
-        if (pick.length >= 30) break;
-        const k = keyOf(c);
-        if (seen.has(k)) continue;
-        const price = Number(c?.prices?.eur) || Number(c?.prices?.eur_foil) || 0;
-        if (deckBudget > 0 && price > deckBudget*1.5) continue;
-        pick.push(c); seen.add(k);
-      }
-
-      const nonlands = pick.map(bundleCard);
-
-      // Compteurs pour les indicateurs
-      const counts = { ramp:0, draw:0, removal:0, wraths:0 };
-      for (const c of nonlands) {
-        const r = roleOf(c);
-        if (counts[r] != null) counts[r] += 1;
-      }
+      setDeck(built);
       setBalanceCounts(counts);
-
-      // Manabase (staples + basiques) selon l'identité de couleur et le slider
-      stepProgress(85, "Génération des terrains…");
-      const lands = buildManabase(commanderCI, targetLands);
-
-      setDeck({ commander: bundleCard(commander), nonlands, lands });
 
       // Scroll vers le commandant (utile mobile)
       setTimeout(() => { commanderRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, 100);
-      endProgress();
+      setProgress(100);
+      setProgressMsg("Finalisation…");
     } catch (e) {
       console.error(e);
       notifyError(String(e.message || e));
@@ -262,7 +187,7 @@ export default function App() {
     }
   }
 
-  // ===== UI helpers =====
+  // ===== UI helpers (aperçu commandant dans la page) =====
   const commanderDisplay = useMemo(() => {
     if (!deck?.commander) return null;
     const c = deck.commander;
