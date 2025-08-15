@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
-// UI (passes 1→7)
+// UI (passes 1→8)
 import ThemeToggle from "./components/controls/ThemeToggle";
 import ManaCost from "./components/cards/ManaCost";
 import CardModal from "./components/cards/CardModal";
@@ -14,7 +14,7 @@ import GenerateButton from "./components/controls/GenerateButton";
 import LoadingModal from "./components/misc/LoadingModal";
 import Toast from "./components/misc/Toast";
 
-// Résultats (Passe 5)
+// Résultats
 import CommanderBlock from "./components/result/CommanderBlock";
 import BalanceIndicators from "./components/result/BalanceIndicators";
 import NonlandGroups from "./components/result/NonlandGroups";
@@ -36,10 +36,10 @@ import {
   roleOf,
 } from "./utils/cards";
 
-// Terrains
-import { suggestBasicLands } from "./utils/lands";
+// Manabase (staples + basiques)
+import { buildManabase } from "./utils/manabase";
 
-// API Scryfall (déjà avec cache+retry via fetcher.js)
+// API Scryfall (avec cache/retry via fetcher)
 import { search as sfSearch, random as sfRandom } from "./api/scryfall";
 
 // Collection utils
@@ -48,41 +48,14 @@ import { parseCollectionFile } from "./utils/collection";
 // Storage (persistance locale)
 import { saveState, loadState } from "./utils/storage";
 
+// Exports (TXT / CSV Moxfield / CSV Archidekt)
+import { toText, toMoxfieldCSV, toArchidektCSV, downloadFile } from "./utils/exports";
+
 // =========================
 // Constantes légères
 // =========================
 const MECHANIC_TAGS = ["blink", "treasure", "sacrifice", "lifegain", "tokens", "reanimation"];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-// ===== Helpers export =====
-function asDeckText(deck){
-  if(!deck) return "";
-  const lines = [];
-  if(deck.commander) lines.push(`Commander: ${deck.commander.name}`);
-  lines.push("");
-  if(deck.nonlands?.length){
-    lines.push("Nonlands:");
-    for(const c of deck.nonlands) lines.push(`1 ${c.name}`);
-    lines.push("");
-  }
-  if(deck.lands?.length){
-    lines.push("Lands:");
-    const map = new Map();
-    for(const c of deck.lands){
-      const k = c.name;
-      map.set(k, (map.get(k)||0)+1);
-    }
-    for(const [name,qty] of map) lines.push(`${qty} ${name}`);
-  }
-  return lines.join("\n");
-}
-function download(filename, text){
-  const blob = new Blob([text], {type: "text/plain;charset=utf-8"});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
-}
 
 export default function App() {
   // Boot state (persistance)
@@ -229,8 +202,7 @@ export default function App() {
 
       const pick = [];
       const seen = new Set();
-
-      function keyOf(c){ return (c.name||"")+":"+(c.mana_cost||""); }
+      const keyOf = (c) => (c.name||"")+":"+(c.mana_cost||"");
 
       stepProgress(60, "Équilibrage vers les cibles…");
       for (const c of pool) {
@@ -264,13 +236,11 @@ export default function App() {
       }
       setBalanceCounts(counts);
 
-      // Terrains basiques depuis l'identité de couleur + slider
+      // Manabase (staples + basiques) selon l'identité de couleur et le slider
       stepProgress(85, "Génération des terrains…");
-      const basics = suggestBasicLands(getCI(commander), targetLands).map(x => ({
-        name: x.name, type_line: x.type_line, cmc: 0, oracle_en: ""
-      }));
+      const lands = buildManabase(getCI(commander), targetLands);
 
-      setDeck({ commander: bundleCard(commander), nonlands, lands: basics });
+      setDeck({ commander: bundleCard(commander), nonlands, lands });
 
       // Scroll vers le commandant (utile mobile)
       setTimeout(() => { commanderRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, 100);
@@ -314,8 +284,10 @@ export default function App() {
       <header className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Commander Craft</h1>
         <div className="flex items-center gap-2">
-          <button className="btn-primary" onClick={()=>navigator.clipboard.writeText(asDeckText(deck))}>Copier</button>
-          <button className="btn-primary" onClick={()=>download("deck.txt", asDeckText(deck))}>Exporter</button>
+          <button className="btn-primary" onClick={()=>navigator.clipboard.writeText(toText(deck))}>Copier</button>
+          <button className="btn-primary" onClick={()=>downloadFile("deck.txt", toText(deck))}>TXT</button>
+          <button className="btn-primary" onClick={()=>downloadFile("deck_moxfield.csv", toMoxfieldCSV(deck), "text/csv")}>Moxfield CSV</button>
+          <button className="btn-primary" onClick={()=>downloadFile("deck_archidekt.csv", toArchidektCSV(deck), "text/csv")}>Archidekt CSV</button>
           <ThemeToggle theme={theme} onToggle={() => setTheme(theme === "dark" ? "light" : "dark")} />
         </div>
       </header>

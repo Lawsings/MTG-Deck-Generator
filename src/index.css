@@ -118,3 +118,6 @@
 @layer components {
   .btn-primary:active { transform: translateY(0.5px); }
 }
+@layer components {
+  .btn-primary + .btn-primary { margin-left: .25rem; }
+}
