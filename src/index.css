@@ -110,3 +110,8 @@
   .range { @apply w-full; }
   .field { @apply space-y-1; }
 }
+@layer components {
+  .stat { @apply rounded-lg border p-3; border-color: var(--border); background: var(--bg2); }
+  .stat-label { @apply text-xs opacity-70; }
+  .stat-value { @apply text-lg font-semibold; }
+}
