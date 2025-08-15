@@ -2,7 +2,7 @@ import ThemeToggle from "./components/controls/ThemeToggle";
 import ManaCost from "./components/cards/ManaCost";
 import CardModal from "./components/cards/CardModal";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { RefreshCcw, Shuffle, Copy, Download, Upload, Settings2, Info, Sparkles, Trash2, Sun, Moon } from "lucide-react";
+import { RefreshCcw, Shuffle, Copy, Download, Upload, Settings2, Info, Sparkles, Trash2 } from "lucide-react";
 
 /**
  * Commander Craft - Générateur de decks MTG Commander
