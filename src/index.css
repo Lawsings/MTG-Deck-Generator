@@ -1,3 +1,70 @@
+/* Tailwind layers */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* =========================
+   Thème (variables CSS)
+   ========================= */
+:root {
+  --bg0: #f6f7f9;
+  --bg1: #ffffff;
+  --bg2: #f8f9fb;
+  --text: #0f1115;
+  --border: rgba(10, 10, 13, 0.12);
+}
+
+[data-theme="dark"] {
+  --bg0: #0b0d12;
+  --bg1: #10131a;
+  --bg2: #121622;
+  --text: #e9ecf1;
+  --border: rgba(233, 236, 241, 0.12);
+}
+
+[data-theme="light"] {
+  --bg0: #f6f7f9;
+  --bg1: #ffffff;
+  --bg2: #f8f9fb;
+  --text: #0f1115;
+  --border: rgba(10, 10, 13, 0.12);
+}
+
+/* =========================
+   Composants utilitaires
+   ========================= */
+@layer components {
+  .panel {
+    @apply rounded-xl border;
+    background: var(--bg1);
+    border-color: var(--border);
+    color: var(--text);
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 font-medium border transition;
+    background: var(--bg2);
+    border-color: var(--border);
+  }
+  .btn-primary:hover { filter: brightness(1.04); }
+  .btn-primary:disabled { @apply opacity-60 cursor-not-allowed; }
+
+  .input {
+    @apply rounded-md border px-3 py-2 w-full;
+    background: var(--bg2);
+    border-color: var(--border);
+    color: var(--text);
+  }
+
+  .list {
+    @apply rounded-lg border bg-white/5 backdrop-blur;
+    background: var(--bg1);
+    border-color: var(--border);
+  }
+  .list-item {
+    @apply hover:bg-white/5 transition;
+  }
+
+  .dropzone {
+    @apply relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition;
+    border-color: va
