@@ -1,6 +1,6 @@
-import ThemeToggle from "./components/controls/ThemeToggle";
-import ManaCost from "./components/cards/ManaCost";
-import CardModal from "./components/cards/CardModal";
+import ThemeToggle from "./components/controls/ThemeToggle.jsx";
+import ManaCost from "./components/cards/ManaCost.jsx";
+import CardModal from "./components/cards/CardModal.jsx";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCcw, Shuffle, Copy, Download, Upload, Settings2, Info, Sparkles, Trash2, Sun, Moon } from "lucide-react";
 
