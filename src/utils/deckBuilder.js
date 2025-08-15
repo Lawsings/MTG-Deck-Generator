@@ -61,10 +61,11 @@ export async function generate(opts) {
   if (commanderMode === "select" && chosenCommander) {
     commanderCard = await sfNamedExact(chosenCommander);
   } else {
-    let q = `legal:commander (type:\\\"legendary creature\\\" or (type:planeswalker and o:\\\"can be your commander\\\") or type:background)`;
+    let q = `legal:commander (type:"legendary creature" or (type:planeswalker and o:"can be your commander") or type:background)`;
     if (desiredCI && desiredCI.length > 0) {
-      q += ` ${identityToQuery(desiredCI)}`; // id<=WUBRG si fourni
+      q += ` ${identityToQuery(desiredCI)}`; // ex: id<=R
     }
+
     commanderCard = await sfRandom(q);
   }
   if (!commanderCard || !isCommanderLegal(commanderCard)) {
