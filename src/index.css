@@ -81,3 +81,16 @@
 
   .muted { @apply opacity-70; }
 }
+
+@layer components {
+  .ci-btn {
+    @apply inline-flex items-center justify-center w-9 h-9 rounded-full border text-sm font-bold transition;
+    background: var(--bg2);
+    border-color: var(--border);
+    color: var(--text);
+  }
+  .ci-btn.selected {
+    outline: 2px solid color-mix(in srgb, var(--text) 20%, transparent);
+    filter: brightness(1.05);
+  }
+}

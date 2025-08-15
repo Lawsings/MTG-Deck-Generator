@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 // UI components (extraits aux passes 1 & 2)
 import ThemeToggle from "./components/controls/ThemeToggle";
+import ColorIdentityPicker from "./components/controls/ColorIdentityPicker";
 import ManaCost from "./components/cards/ManaCost";
 import CardModal from "./components/cards/CardModal";
 import FileDrop from "./components/collection/FileDrop";
