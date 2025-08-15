@@ -80,7 +80,22 @@ export async function generate(opts) {
   // Ajout de game:paper et -is:funny pour la qualité du pool
   const baseQ = `-type:land legal:commander game:paper -is:funny ${baseFilter}`.trim();
   const res = await sfSearch(`${baseQ} order:edhrec unique:prints`);
-  const poolRaw = (res?.data || []).filter(isCommanderLegal);
+  let poolRaw = (res?.data || []).filter(isCommanderLegal);
+
+  // Si le pool est trop réduit, relancer une recherche moins restrictive
+  const MIN_POOL_SIZE = 70;
+  if (poolRaw.length < MIN_POOL_SIZE) {
+    progress(25, "Pool insuffisant, élargissement de la recherche…");
+    const resFallback = await sfSearch(`${baseQ} order:edhrec`);
+    const extra = (resFallback?.data || []).filter(isCommanderLegal);
+    const seen = new Set(poolRaw.map(c => c.id));
+    for (const c of extra) {
+      if (!seen.has(c.id)) {
+        poolRaw.push(c);
+        seen.add(c.id);
+      }
+    }
+  }
 
   // 3) Scoring et synergie (EDHREC / Owned / Budget / Mécaniques)
   progress(35, "Filtrage par poids et mécaniques…");
