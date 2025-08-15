@@ -1,3 +1,6 @@
+import ThemeToggle from "./components/controls/ThemeToggle";
+import ManaCost from "./components/cards/ManaCost";
+import CardModal from "./components/cards/CardModal";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCcw, Shuffle, Copy, Download, Upload, Settings2, Info, Sparkles, Trash2, Sun, Moon } from "lucide-react";
 
@@ -260,27 +263,6 @@ function CardTile({card, onOpen, qty, owned}){
     </button>
   );
 }
-function CardModal({open, card, owned, onClose}){
-  if(!open||!card) return null;
-  const price = (Number(card.prices?.eur)||Number(card.prices?.eur_foil)||0).toFixed(2);
-  return (
-   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
-      <div className="rounded-2xl max-w-3xl w-full grid md:grid-cols-2 gap-4 p-4"   style={{ background: 'var(--bg1)', border: '1px solid var(--border)', color: 'var(--text)' }}   onClick={(e)=>e.stopPropagation()} >
-        {card.image && <img src={card.image} alt={card.name} className="w-full rounded-lg object-cover" />}
-        <div className="space-y-2 min-w-0">
-          <h4 className="text-xl font-semibold flex items-center gap-2">
-            {card.name}
-            {owned && (<span style={{ color:'limegreen', fontWeight:'bold' }} title="Carte présente dans votre collection">✓</span>)}
-          </h4>
-          {card.mana_cost && <div className="text-sm"><ManaCost cost={card.mana_cost}/></div>}
-          {card.oracle_en && <div className="text-sm whitespace-pre-line">{card.oracle_en}</div>}
-          <div className="text-sm muted">Prix estimé: {price}€</div>
-          {card.scryfall_uri && <a href={card.scryfall_uri} target="_blank" rel="noreferrer" className="btn inline-flex">Voir sur Scryfall</a>}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /***************** Cards helpers *****************/
 function bundleCard(c){
@@ -311,44 +293,6 @@ const primaryTypeLabel = (tl)=>{
   if(t.includes("land")) return "Terrains";
   return "Autres";
 };
-
-function ThemeToggle({ theme, onToggle }) {
-  const isLight = theme === "light";
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={isLight}
-      aria-label={isLight ? "Basculer en mode sombre" : "Basculer en mode clair"}
-      onClick={onToggle}
-      className="relative inline-flex h-9 w-16 items-center rounded-full border border-[var(--border)]"
-      style={{ background: "var(--bg2)" }}
-    >
-      {/* Icônes gauche/droite */}
-      <Moon
-        className={`absolute left-2 h-4 w-4 transition-opacity duration-300 ${
-          isLight ? "opacity-0" : "opacity-100"
-        }`}
-      />
-      <Sun
-        className={`absolute right-2 h-4 w-4 transition-opacity duration-300 ${
-          isLight ? "opacity-100" : "opacity-0"
-        }`}
-      />
-
-      {/* Curseur */}
-      <span
-        className={`pointer-events-none inline-block h-7 w-7 rounded-full shadow-sm transform transition-transform duration-300`}
-        style={{
-          background: "var(--panel-strong)",
-          border: "1px solid var(--border)",
-          transform: isLight ? "translateX(32px)" : "translateX(2px)",
-        }}
-      />
-    </button>
-  );
-}
-
 
 /***************** App *****************/
 export default function App(){
@@ -586,11 +530,11 @@ export default function App(){
                   {/* même icône qu’originale */}
                   <h2 className="font-medium">Collection personnelle (optionnel)</h2>
                 </div>
-            
+
                 <p className="text-sm muted">
                   Importe un ou plusieurs fichiers pour prioriser tes cartes lors de la génération.
                 </p>
-            
+
                 {/* Même composant d’upload que l’original */}
                 <div className="mt-3">
                   <FileDrop
@@ -599,7 +543,7 @@ export default function App(){
                     }}
                   />
                 </div>
-            
+
                 <div className="mt-3 text-sm">
                   {uploadedFiles.length>0 ? (
                     <div className="space-y-2">
@@ -619,14 +563,14 @@ export default function App(){
                     <div className="muted">Aucun fichier importé pour l’instant.</div>
                   )}
                 </div>
-            
+
                 <div className="flex items-center justify-between mt-3">
                   <p>Cartes reconnues: <span className="font-semibold">{ownedMap.size}</span></p>
                   <button className="btn" onClick={clearCollection}>Réinitialiser</button>
                 </div>
               </div>
             </div>
-            
+
             <button className="mt-5 w-full btn-primary justify-center" disabled={loading} onClick={generate}>
               {loading? (<RefreshCcw className="h-4 w-4 animate-spin"/>):(<Shuffle className="h-4 w-4"/>)} {loading?"Génération...":"Générer un deck"}
             </button>
